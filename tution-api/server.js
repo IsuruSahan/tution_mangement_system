@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
+const cors = require('cors'); // Make sure cors is required
 require('dotenv').config(); // Loads the variables from your .env file
 
 // Create the express app
@@ -8,17 +8,43 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // --- Middleware ---
-app.use(cors()); // Allows your React app to talk to this API
+
+// --- THIS IS THE FIX ---
+// Configure CORS to only allow your deployed frontend and localhost
+const allowedOrigins = [
+    'http://localhost:3000', // For local testing
+    'https://tution-mangement-system-8emn.vercel.app' // Your deployed frontend URL
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests) OR from allowed origins
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.error(`CORS blocked request from origin: ${origin}`); // Log blocked origins
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true // If you might use cookies/sessions later
+}));
+// --- END OF FIX ---
+
 app.use(express.json()); // Allows the server to accept JSON data in requests
 
 // --- Database Connection ---
-// This uses the MONGO_URI from your .env file
-mongoose.connect(process.env.MONGO_URI)
+// Use MONGODB_URI from .env file (assuming it's named MONGODB_URI there)
+const dbUri = process.env.MONGODB_URI; // Get URI from environment variable
+if (!dbUri) {
+    console.error('Error: MONGODB_URI is not defined in the .env file.');
+    process.exit(1); // Stop the server if DB URI is missing
+}
+mongoose.connect(dbUri)
     .then(() => console.log('MongoDB connected successfully.'))
     .catch(err => console.error('MongoDB connection error:', err));
 
 // --- API Routes ---
-// Import the route files we just created
+// Import the route files
 const studentRoutes = require('./routes/students');
 const paymentRoutes = require('./routes/payments');
 const attendanceRoutes = require('./routes/attendance');
@@ -27,16 +53,18 @@ const reportsRoutes = require('./routes/reports');
 const locationRoutes = require('./routes/locations');
 
 // Tell express to use these routes
-// Any URL starting with /api/students will go to studentRoutes
-app.use('/api/students', studentRoutes); 
-// Any URL starting with /api/payments will go to paymentRoutes
+app.use('/api/students', studentRoutes);
 app.use('/api/payments', paymentRoutes);
-// Any URL starting with /api/attendance will go to attendanceRoutes
-app.use('/api/attendance', attendanceRoutes);
+// Corrected: Only use attendanceRoutes once
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/locations', locationRoutes);
+
+// --- Simple Root Route (Optional: good for checking if API is live) ---
+app.get('/', (req, res) => {
+    res.send('Tuition API is running!');
+});
 
 // --- Start the Server ---
 app.listen(PORT, () => {
