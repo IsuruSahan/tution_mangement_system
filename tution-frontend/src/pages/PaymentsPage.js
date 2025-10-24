@@ -27,7 +27,7 @@ function PaymentsPage() {
                 // Get API URL from environment
                 const apiUrl = process.env.REACT_APP_API_URL;
                 if (!apiUrl) {
-                    throw new Error("API URL is not configured. Check Vercel environment variables.");
+                    throw new Error("API URL is not configured. Check Vercel environment variables or local .env file.");
                 }
                 const res = await axios.get(`${apiUrl}/api/locations`); // Use apiUrl
                 setLocations(res.data);
@@ -211,7 +211,7 @@ function PaymentsPage() {
                                 <td>{item.student.location}</td>
                                 <td> {/* Amount Cell */}
                                     {item.status === 'Paid' ? (
-                                        `LKR ${item.amount != null ? item.amount.toLocaleString() : 'N/A'}` // Handle null amount better
+                                        `LKR ${item.amount != null ? item.amount.toLocaleString() : 'N/A'}` // Handle null amount
                                     ) : (
                                         <Form.Control
                                             type="number"

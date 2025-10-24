@@ -15,46 +15,54 @@ function SettingsPage() {
     const [resetFinanceMessage, setResetFinanceMessage] = useState('');
     const [resetFinanceError, setResetFinanceError] = useState('');
 
-    // --- NEW STATE for Attendance Reset ---
+    // --- State for Attendance Reset ---
     const [resettingAttendance, setResettingAttendance] = useState(false);
     const [resetAttendanceMessage, setResetAttendanceMessage] = useState('');
     const [resetAttendanceError, setResetAttendanceError] = useState('');
 
-    // --- NEW STATE for Student Reset ---
+    // --- State for Student Reset ---
     const [resettingStudents, setResettingStudents] = useState(false);
     const [resetStudentsMessage, setResetStudentsMessage] = useState('');
     const [resetStudentsError, setResetStudentsError] = useState('');
 
+    // Get API URL from environment
+    const apiUrl = process.env.REACT_APP_API_URL;
 
-    // Fetch locations from API
+    // --- Fetch locations from API ---
     const fetchLocations = async () => {
-        setLoadingLocations(true); // Ensure loading state is set
-        setLocationError(''); // Clear previous errors
+        setLoadingLocations(true);
+        setLocationError('');
         try {
-            const response = await axios.get('http://localhost:5000/api/locations');
+            if (!apiUrl) throw new Error("API URL is not configured.");
+            const response = await axios.get(`${apiUrl}/api/locations`); // Use apiUrl
             setLocations(response.data);
         } catch (err) {
             console.error("Failed to fetch locations:", err);
-            setLocationError('Could not load locations.');
+            setLocationError(`Could not load locations: ${err.message}`);
         } finally {
             setLoadingLocations(false);
         }
     };
 
     useEffect(() => {
-        fetchLocations();
-    }, []);
+        if(apiUrl) { // Only fetch if apiUrl is set
+            fetchLocations();
+        } else {
+            setLocationError("API URL is not configured. Check Vercel/local .env file.");
+            setLoadingLocations(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apiUrl]); // Re-run if apiUrl changes (though it shouldn't)
 
-    // Handle adding a location
+    // --- Handle adding a location ---
     const handleAddLocation = async (e) => {
         e.preventDefault();
         setFormError('');
-        if (!newLocationName) {
-            setFormError('Location name cannot be empty.'); return;
-        }
+        if (!newLocationName) { setFormError('Location name cannot be empty.'); return; }
+        if (!apiUrl) { setFormError("API URL not configured."); return; } // Check URL
         try {
-            const response = await axios.post('http://localhost:5000/api/locations', { name: newLocationName });
-            setLocations([...locations, response.data]); // Use functional update if needed
+            const response = await axios.post(`${apiUrl}/api/locations`, { name: newLocationName }); // Use apiUrl
+            setLocations([...locations, response.data]);
             setNewLocationName('');
         } catch (err) {
              console.error("Error adding location:", err);
@@ -62,12 +70,13 @@ function SettingsPage() {
          }
     };
 
-    // Handle deleting a location
+    // --- Handle deleting a location ---
     const handleDeleteLocation = async (id) => {
+        if (!apiUrl) { alert("API URL not configured."); return; } // Check URL
         if (window.confirm('Are you sure you want to delete this location?')) {
             try {
-                await axios.delete(`http://localhost:5000/api/locations/${id}`);
-                setLocations(locations.filter(loc => loc._id !== id)); // Use functional update if needed
+                await axios.delete(`${apiUrl}/api/locations/${id}`); // Use apiUrl
+                setLocations(locations.filter(loc => loc._id !== id));
             } catch (err) {
                  console.error("Error deleting location:", err);
                  alert(`Error deleting location: ${err.response?.data?.message || err.message}`);
@@ -75,15 +84,15 @@ function SettingsPage() {
         }
     };
 
-    // Handle Reset Finance Data
+    // --- Handle Reset Finance Data ---
     const handleResetFinance = async () => {
-        setResetFinanceMessage('');
-        setResetFinanceError('');
-        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE you want to delete ALL payment records? This action cannot be undone!') &&
+        setResetFinanceMessage(''); setResetFinanceError('');
+        if (!apiUrl) { setResetFinanceError("API URL not configured."); return; } // Check URL
+        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE...?') &&
             window.confirm('🚨 FINAL WARNING! Really delete all finance data?')) {
             setResettingFinance(true);
             try {
-                const response = await axios.delete('http://localhost:5000/api/payments/reset');
+                const response = await axios.delete(`${apiUrl}/api/payments/reset`); // Use apiUrl
                 setResetFinanceMessage(response.data.message || 'Finance data reset successfully.');
             } catch (err) {
                  console.error("Error resetting finance data:", err);
@@ -94,15 +103,15 @@ function SettingsPage() {
         }
     };
 
-    // --- NEW: Handle Reset Attendance Data ---
+    // --- Handle Reset Attendance Data ---
     const handleResetAttendance = async () => {
-        setResetAttendanceMessage('');
-        setResetAttendanceError('');
-        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE you want to delete ALL attendance records? This action cannot be undone!') &&
+        setResetAttendanceMessage(''); setResetAttendanceError('');
+        if (!apiUrl) { setResetAttendanceError("API URL not configured."); return; } // Check URL
+        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE...?') &&
             window.confirm('🚨 FINAL WARNING! Really delete all attendance data?')) {
             setResettingAttendance(true);
             try {
-                const response = await axios.delete('http://localhost:5000/api/attendance/reset');
+                const response = await axios.delete(`${apiUrl}/api/attendance/reset`); // Use apiUrl
                 setResetAttendanceMessage(response.data.message || 'Attendance data reset successfully.');
             } catch (err) {
                  console.error("Error resetting attendance data:", err);
@@ -113,15 +122,15 @@ function SettingsPage() {
         }
     };
 
-    // --- NEW: Handle Reset Student Data ---
+    // --- Handle Reset Student Data ---
     const handleResetStudents = async () => {
-        setResetStudentsMessage('');
-        setResetStudentsError('');
-        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE you want to deactivate ALL students? They will be hidden from lists but their payment/attendance history remains.') &&
+        setResetStudentsMessage(''); setResetStudentsError('');
+        if (!apiUrl) { setResetStudentsError("API URL not configured."); return; } // Check URL
+        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE...?') &&
             window.confirm('🚨 FINAL WARNING! Really deactivate all students?')) {
             setResettingStudents(true);
             try {
-                const response = await axios.delete('http://localhost:5000/api/students/reset');
+                const response = await axios.delete(`${apiUrl}/api/students/reset`); // Use apiUrl
                 setResetStudentsMessage(response.data.message || 'All students deactivated successfully.');
             } catch (err) {
                  console.error("Error deactivating students:", err);
@@ -139,9 +148,7 @@ function SettingsPage() {
                 {/* --- Manage Locations Card --- */}
                 <Col md={12} lg={6} className="mb-4">
                     <Card>
-                        <Card.Header>
-                            <Card.Title as="h2" className="mb-0">Manage Locations</Card.Title>
-                        </Card.Header>
+                        <Card.Header> <Card.Title as="h2" className="mb-0">Manage Locations</Card.Title> </Card.Header>
                         <Card.Body>
                             <h5 className="mb-3">Add New Location</h5>
                             {formError && <Alert variant="danger">{formError}</Alert>}
@@ -181,9 +188,7 @@ function SettingsPage() {
 
                     {/* --- Reset Finance Card --- */}
                     <Card border="danger" className="mb-4">
-                        <Card.Header className="bg-danger text-white">
-                            <Card.Title as="h3" className="mb-0">Reset Finance Data</Card.Title>
-                        </Card.Header>
+                        <Card.Header className="bg-danger text-white"> <Card.Title as="h3" className="mb-0">Reset Finance Data</Card.Title> </Card.Header>
                         <Card.Body>
                             <p className="text-danger">Permanently delete <strong>ALL</strong> payment records.</p>
                             {resetFinanceMessage && <Alert variant="success">{resetFinanceMessage}</Alert>}
@@ -194,11 +199,9 @@ function SettingsPage() {
                         </Card.Body>
                     </Card>
 
-                    {/* --- NEW: Reset Attendance Card --- */}
+                    {/* --- Reset Attendance Card --- */}
                     <Card border="danger" className="mb-4">
-                        <Card.Header className="bg-danger text-white">
-                            <Card.Title as="h3" className="mb-0">Reset Attendance Data</Card.Title>
-                        </Card.Header>
+                        <Card.Header className="bg-danger text-white"> <Card.Title as="h3" className="mb-0">Reset Attendance Data</Card.Title> </Card.Header>
                         <Card.Body>
                             <p className="text-danger">Permanently delete <strong>ALL</strong> attendance records.</p>
                             {resetAttendanceMessage && <Alert variant="success">{resetAttendanceMessage}</Alert>}
@@ -209,11 +212,9 @@ function SettingsPage() {
                         </Card.Body>
                     </Card>
 
-                     {/* --- NEW: Reset Students Card --- */}
+                     {/* --- Reset Students Card --- */}
                     <Card border="danger" className="mb-4">
-                        <Card.Header className="bg-danger text-white">
-                            <Card.Title as="h3" className="mb-0">Deactivate All Students</Card.Title>
-                        </Card.Header>
+                        <Card.Header className="bg-danger text-white"> <Card.Title as="h3" className="mb-0">Deactivate All Students</Card.Title> </Card.Header>
                         <Card.Body>
                             <p className="text-danger">Set <strong>ALL</strong> students to inactive. They will be hidden but their data remains.</p>
                             {resetStudentsMessage && <Alert variant="success">{resetStudentsMessage}</Alert>}
