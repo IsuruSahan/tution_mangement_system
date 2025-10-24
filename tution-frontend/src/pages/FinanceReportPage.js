@@ -2,59 +2,71 @@ import React, { useState, useEffect } from 'react'; // Added useEffect
 import axios from 'axios';
 import { Container, Row, Col, Form, Button, Card, Table, Spinner, Alert, Badge } from 'react-bootstrap';
 
-// Helper array for month dropdown
+// Helper arrays (unchanged)
 const months = ["All", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const years = ["All", new Date().getFullYear(), new Date().getFullYear() - 1]; // Current & last year
+const years = ["All", new Date().getFullYear(), new Date().getFullYear() - 1];
 
 function FinanceReportPage() {
-    // --- State for Filters ---
+    // --- State for Filters (unchanged) ---
     const [month, setMonth] = useState('All');
     const [year, setYear] = useState(new Date().getFullYear());
     const [grade, setGrade] = useState('All');
     const [location, setLocation] = useState('All');
 
-    // --- State for Data ---
+    // --- State for Data (unchanged) ---
     const [reportData, setReportData] = useState(null);
     const [loading, setLoading] = useState(false); // Loading for report data
     const [error, setError] = useState('');
 
-    // --- NEW STATE FOR LOCATIONS ---
+    // --- State for Locations ---
     const [locations, setLocations] = useState([]);
     const [locationLoading, setLocationLoading] = useState(true);
 
-    // --- NEW: Fetch locations when component loads ---
+    // --- Fetch locations when component loads (Uses Environment Variable) ---
     useEffect(() => {
         const fetchLocations = async () => {
+            setLocationLoading(true);
+            setError(''); // Clear previous errors
             try {
-                const res = await axios.get('http://localhost:5000/api/locations');
+                const apiUrl = process.env.REACT_APP_API_URL;
+                if (!apiUrl) {
+                    throw new Error("API URL is not configured.");
+                }
+                const res = await axios.get(`${apiUrl}/api/locations`); // Use apiUrl
                 setLocations(res.data);
-                setLocationLoading(false);
             } catch (err) {
-                console.error("Failed to fetch locations", err);
-                setError("Failed to load locations for filtering.");
+                console.error("Failed to fetch locations:", err);
+                setError(`Failed to load locations list: ${err.message}`); // Set specific error
+            } finally {
                 setLocationLoading(false);
             }
         };
         fetchLocations();
     }, []); // Runs once on mount
 
-    // --- Load the Report from API (No Change) ---
+    // --- Load the Report from API (Uses Environment Variable) ---
     const loadFinanceReport = async () => {
         setLoading(true);
-        setError('');
+        setError(''); // Clear previous report errors
         setReportData(null);
         try {
-            const response = await axios.get('http://localhost:5000/api/reports/finance', {
+            const apiUrl = process.env.REACT_APP_API_URL;
+             if (!apiUrl) {
+                throw new Error("API URL is not configured.");
+            }
+            const response = await axios.get(`${apiUrl}/api/reports/finance`, { // Use apiUrl
                 params: { month, year, grade, location }
             });
             setReportData(response.data);
         } catch (err) {
-            setError('Error loading finance report.');
-            console.error(err);
+            console.error("Error loading finance report:", err);
+            setError(`Error loading finance report: ${err.response?.data?.message || err.message}`);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
+    // --- Render JSX ---
     return (
         <Container fluid className="mt-4">
             <Card className="mb-4">
@@ -63,7 +75,7 @@ function FinanceReportPage() {
                     {error && <Alert variant="danger">{error}</Alert>}
                     <Form>
                         <Row>
-                            {/* --- Month, Year, Grade Filters (No Change) --- */}
+                            {/* --- Month Filter --- */}
                             <Col md={3}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Month</Form.Label>
@@ -72,6 +84,7 @@ function FinanceReportPage() {
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
+                            {/* --- Year Filter --- */}
                             <Col md={3}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Year</Form.Label>
@@ -80,6 +93,7 @@ function FinanceReportPage() {
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
+                            {/* --- Grade Filter --- */}
                             <Col md={2}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Grade</Form.Label>
@@ -94,8 +108,7 @@ function FinanceReportPage() {
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-
-                            {/* --- MODIFIED: Location Filter --- */}
+                            {/* --- Location Filter (Dynamic) --- */}
                             <Col md={2}>
                                 <Form.Group className="mb-3">
                                     <Form.Label>Location</Form.Label>
@@ -109,15 +122,13 @@ function FinanceReportPage() {
                                             <option disabled>Loading...</option>
                                         ) : (
                                             locations.map(loc => (
-                                                <option key={loc._id} value={loc.name}>
-                                                    {loc.name}
-                                                </option>
+                                                <option key={loc._id} value={loc.name}>{loc.name}</option>
                                             ))
                                         )}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Load Button (No Change) --- */}
+                            {/* --- Load Button --- */}
                             <Col md={2} className="d-flex align-items-end mb-3">
                                 <Button onClick={loadFinanceReport} className="w-100" disabled={loading || locationLoading}>
                                     {loading ? <Spinner as="span" size="sm" /> : 'Load Report'}
@@ -128,9 +139,9 @@ function FinanceReportPage() {
                 </Card.Body>
             </Card>
 
-            {/* --- Report Data Display (No Change) --- */}
+            {/* --- Report Data Display --- */}
             {loading && <div className="text-center"><Spinner animation="border" /></div>}
-            
+
             {reportData && (
                 <>
                     {/* Grand Totals */}
@@ -140,6 +151,7 @@ function FinanceReportPage() {
                                 <Card.Header>Total Income (LKR)</Card.Header>
                                 <Card.Body>
                                     <Card.Title>
+                                        {/* Optional chaining ?. for safety */}
                                         {reportData.grandTotal?.totalIncome?.toLocaleString() || '0'}
                                     </Card.Title>
                                 </Card.Body>
@@ -173,6 +185,7 @@ function FinanceReportPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    {/* Check if breakdown exists and has length */}
                                     {reportData.breakdown && reportData.breakdown.length > 0 ? (
                                         reportData.breakdown.map((item, index) => (
                                             <tr key={index}>
@@ -181,7 +194,7 @@ function FinanceReportPage() {
                                                 <td><Badge bg="primary">{item._id.grade}</Badge></td>
                                                 <td><Badge bg="secondary">{item._id.location}</Badge></td>
                                                 <td>{item.studentsPaid}</td>
-                                                <td>{item.totalIncome.toLocaleString()}</td>
+                                                <td>{item.totalIncome != null ? item.totalIncome.toLocaleString() : 'N/A'}</td>
                                             </tr>
                                         ))
                                     ) : (
@@ -194,6 +207,10 @@ function FinanceReportPage() {
                         </Card.Body>
                     </Card>
                 </>
+            )}
+            {/* Show message only if not loading AND no reportData exists yet */}
+            {!loading && !reportData && (
+                 <Alert variant="info">Select filters and click "Load Report" to view data.</Alert>
             )}
         </Container>
     );

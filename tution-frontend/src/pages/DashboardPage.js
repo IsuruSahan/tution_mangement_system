@@ -40,7 +40,7 @@ function DashboardPage() {
         const fetchDashboardData = async () => {
             try {
                 const response = await axios.get('http://localhost:5000/api/dashboard');
-                console.log("Attempting API call to:", apiUrl);
+                
                 setDashboardData(response.data);
                 setLoading(false);
             } catch (err) {

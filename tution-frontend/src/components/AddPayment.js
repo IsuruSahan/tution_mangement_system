@@ -3,8 +3,8 @@ import axios from 'axios';
 import { Form, Button, Row, Col, Alert, Card } from 'react-bootstrap';
 
 function AddPayment({ onPaymentAdded }) {
-    // ... (all state is the same) ...
-    const [studentId, setStudentId] = useState('');
+    // --- State ---
+    const [studentId, setStudentId] = useState(''); // Default to empty (no selection)
     const [month, setMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
     const [year, setYear] = useState(new Date().getFullYear());
     const [amount, setAmount] = useState('');
@@ -12,23 +12,29 @@ function AddPayment({ onPaymentAdded }) {
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
 
-    // ... (useEffect is the same) ...
+    // --- Fetch Students ---
     useEffect(() => {
         const fetchStudents = async () => {
+             setError(''); // Clear previous errors
+             setStudents([]); // Clear previous list
             try {
-                const response = await axios.get('http://localhost:5000/api/students');
-                setStudents(response.data);
-                if (response.data.length > 0) {
-                    setStudentId(response.data[0]._id);
+                const apiUrl = process.env.REACT_APP_API_URL;
+                if (!apiUrl) {
+                    throw new Error("API URL is not configured. Check Vercel environment variables.");
                 }
+                // Fetch only active students (backend GET /api/students should handle this)
+                const response = await axios.get(`${apiUrl}/api/students`);
+                setStudents(response.data);
+                // Removed default selection: setStudentId(response.data[0]._id);
             } catch (err) {
-                setError('Could not load students for the form.');
+                console.error("Failed to fetch students:", err);
+                setError(`Could not load students for the form: ${err.message}`);
             }
         };
         fetchStudents();
-    }, []);
+    }, []); // Runs once on mount
 
-    // --- 2. Handle Form Submit ---
+    // --- Handle Form Submit ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         setMessage('');
@@ -39,52 +45,57 @@ function AddPayment({ onPaymentAdded }) {
         }
 
         try {
+            const apiUrl = process.env.REACT_APP_API_URL;
+             if (!apiUrl) {
+                throw new Error("API URL is not configured.");
+            }
+
             const newPayment = {
-                studentId, 
+                studentId,
                 month,
                 year: Number(year),
                 amount: Number(amount),
-                status: 'Paid' // <-- CHANGED FROM 'Pending' TO 'Paid'
+                status: 'Paid' // Logged payments are directly marked as Paid
             };
 
-            // This URL is correct from our previous fix
-            await axios.post('http://localhost:5000/api/payments/mark', newPayment);
-            
+            await axios.post(`${apiUrl}/api/payments/mark`, newPayment); // Use apiUrl
+
             setMessage('Payment logged successfully.');
-            setAmount(''); 
+            setAmount('');
+            setStudentId(''); // Clear student selection after success
 
             if (onPaymentAdded) {
-                onPaymentAdded();
+                onPaymentAdded(); // Notify parent component if needed (e.g., to refresh another list)
             }
 
         } catch (err) {
-            setError('Error logging payment.');
-            console.error(err);
+             console.error("Error logging payment:", err);
+            setError(`Error logging payment: ${err.response?.data?.message || err.message}`);
         }
     };
 
-    // ... (The rest of the file, including the return() statement, is exactly the same) ...
     const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
     return (
         <Card className="mb-4">
             <Card.Body>
                 <Card.Title>Log a New Payment</Card.Title>
-                
+
                 {message && <Alert variant="success">{message}</Alert>}
                 {error && <Alert variant="danger">{error}</Alert>}
 
                 <Form onSubmit={handleSubmit}>
-                    {/* ... all form fields ... */}
                     <Row>
                         <Col md={6}>
                             <Form.Group className="mb-3" controlId="formPaymentStudent">
                                 <Form.Label>Student</Form.Label>
                                 <Form.Select value={studentId} onChange={(e) => setStudentId(e.target.value)} required>
-                                    <option value="">Select a Student...</option>
+                                    <option value="">-- Select a Student --</option> {/* Changed default text */}
                                     {students.map(student => (
                                         <option key={student._id} value={student._id}>
-                                            {student.name} ({student.grade} - {student.location})
+                                            {/* --- THIS LINE IS MODIFIED --- */}
+                                            {student.name} ({student.studentId || 'No ID'})
+                                            {/* --- END MODIFICATION --- */}
                                         </option>
                                     ))}
                                 </Form.Select>
@@ -118,7 +129,7 @@ function AddPayment({ onPaymentAdded }) {
                                 <Form.Control
                                     type="number"
                                     value={year}
-                                    onChange={(e) => setYear(e.gaset.value)}
+                                    onChange={(e) => setYear(e.target.value)} // Corrected typo here
                                     required
                                 />
                             </Form.Group>
