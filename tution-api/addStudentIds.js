@@ -1,85 +1,103 @@
-// removeInactiveStudents.js
+// seedStudents.js
 require('dotenv').config(); // Load .env variables
 const mongoose = require('mongoose');
-const Student = require('./models/Student'); // Adjust path if needed
-// You might need these if you want to clean up related data later, but be VERY careful
-// const Payment = require('./models/Payment');
-// const Attendance = require('./models/Attendance');
+const Student = require('./models/Student'); // Make sure this path is correct
 
-// --- Main script logic ---
-async function removeInactive() {
-    // 1. Connect to Database
+// --- Helper function to generate a random 4-digit ID (1000-9999) ---
+function generateStudentId() {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+// --- Data for random generation ---
+const firstNames = ["Sahan", "Isuru", "Dahami", "Nimal", "Kamal", "Sunil", "Priya", "Malith", "Ruwan", "Ayesha", "Kasun", "Chamari", "Mahela", "Kumar", "Lasith", "Thisara", "Anjelo", "Dilshan", "Sanath", "Muthiah"];
+const lastNames = ["Perera", "Silva", "Fernando", "Jayasuriya", "Bandara", "Gunarathne", "Kumari", "Senanayake", "Kumara", "Dissanayake"];
+const grades = ["Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11"];
+
+// --- MODIFIED: Your new locations ---
+const locations = ["Vishwa - Mawanella", "Sonetto - Mawanella", "Life - Mawanella"];
+// ------------------------------------
+
+// Helper to pick a random item from an array
+const randomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// --- Main script function ---
+async function seedDatabase() {
+    // 1. Connect to Database (Uses MONGO_URI from your .env file)
     const dbUri = process.env.MONGODB_URI;
     if (!dbUri) {
-        console.error('Error: MONGODB_URI is not defined in .env file.');
+        console.error('Error: MONGODB_URI is not defined. Check your .env file.');
         process.exit(1);
     }
 
     try {
-        console.log('Connecting to MongoDB...');
         await mongoose.connect(dbUri);
-        console.log('MongoDB connected successfully.');
+        console.log(`Connected to MongoDB Atlas...`); // Live DB connection
 
-        // 2. Find and Delete students marked as inactive
-        console.log('Finding inactive students (isActive: false)...');
-        const inactiveStudents = await Student.find({ isActive: false });
-
-        if (inactiveStudents.length === 0) {
-            console.log('No inactive students found to delete.');
+        // Check if locations exist in DB (important!)
+        const dbLocations = await mongoose.connection.db.collection('locations').find({}).toArray();
+        const locationNames = dbLocations.map(loc => loc.name);
+        console.log("Locations found in database:", locationNames);
+        
+        // Check if script locations match DB locations
+        const allLocationsExist = locations.every(loc => locationNames.includes(loc));
+        if (!allLocationsExist) {
+            console.error("Error: Not all locations in the script exist in your 'locations' collection in the database.");
+            console.log("Please go to your website's Settings page and add these locations first:", locations);
             await mongoose.disconnect();
             return;
         }
+        console.log("Locations verified.");
 
-        console.log(`Found ${inactiveStudents.length} inactive students. Preparing to delete...`);
-        const studentIdsToDelete = inactiveStudents.map(s => s._id);
+        console.log('Starting to create 20 random students...');
 
-        // *** THIS IS THE DELETION STEP ***
-        const deleteResult = await Student.deleteMany({ _id: { $in: studentIdsToDelete } });
-        // Alternative: await Student.deleteMany({ isActive: false });
+        // We run this 20 times, one after another, to ensure unique IDs
+        for (let i = 0; i < 20; i++) {
+            let uniqueIdFound = false;
+            let generatedId;
+            let attempts = 0;
 
-        console.log('--- Deletion Complete ---');
-        console.log(`Successfully deleted ${deleteResult.deletedCount} student records.`);
+            // Loop to find a unique ID (max 10 tries per student)
+            while (!uniqueIdFound && attempts < 10) {
+                generatedId = generateStudentId();
+                const existing = await Student.findOne({ studentId: generatedId });
+                if (!existing) {
+                    uniqueIdFound = true;
+                }
+                attempts++;
+            }
 
-        // --- Optional: Clean up related data (Use with EXTREME caution) ---
-        // Uncomment these lines ONLY if you are absolutely sure you want to delete
-        // all payment and attendance records associated with these deleted students.
-        // This is usually NOT recommended as it destroys historical data.
+            if (!uniqueIdFound) {
+                console.warn(`Could not find a unique ID for student ${i + 1}, skipping.`);
+                continue; // Skip this student and move to the next
+            }
 
-        // console.log('Deleting related payment records...');
-        // const paymentDeleteResult = await Payment.deleteMany({ student: { $in: studentIdsToDelete } });
-        // console.log(`Deleted ${paymentDeleteResult.deletedCount} payment records.`);
+            // Create the new student object
+            const student = new Student({
+                studentId: generatedId,
+                name: `${randomElement(firstNames)} ${randomElement(lastNames)}`,
+                grade: randomElement(grades),
+                location: randomElement(locations), // Will pick one of your 3 locations
+                contactPhone: `07${Math.floor(10000000 + Math.random() * 90000000)}`,
+                parentName: `Parent of ${firstNames[i]}`,
+                isActive: true
+            });
 
-        // console.log('Deleting related attendance records...');
-        // const attendanceDeleteResult = await Attendance.deleteMany({ student: { $in: studentIdsToDelete } });
-        // console.log(`Deleted ${attendanceDeleteResult.deletedCount} attendance records.`);
+            // Save the student to the database
+            await student.save();
+            console.log(`Added: ${student.name} (ID: ${student.studentId})`);
+        }
 
+        console.log('\n--- Seeding complete! ---');
+        console.log('Successfully added 20 random students to the live database.');
 
     } catch (err) {
-        console.error('An error occurred during the script:', err);
+        console.error('\nAn error occurred during seeding:', err.message);
     } finally {
-        // 3. Disconnect from Database
+        // 4. Disconnect from Database
         await mongoose.disconnect();
         console.log('MongoDB disconnected.');
     }
 }
 
-// Run the function after a confirmation prompt
-const readline = require('readline').createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-readline.question(
-    `🚨 WARNING: This script permanently deletes students marked as inactive (isActive: false).\n` +
-    `Have you backed up your database? (yes/no): `,
-    answer => {
-        if (answer.toLowerCase() === 'yes') {
-            removeInactive();
-        } else {
-            console.log('Operation cancelled. Please back up your database first.');
-            readline.close();
-            process.exit(0);
-        }
-        readline.close();
-    }
-);
+// Run the script
+seedDatabase();
