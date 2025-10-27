@@ -8,7 +8,7 @@ function NavigationBar() {
     // 'expand-lg' makes it collapse into a "hamburger" menu on medium/small screens
     <Navbar bg="dark" variant="dark" expand="lg" sticky="top">
       <Container>
-        <Navbar.Brand as={Link} to="/">Manager</Navbar.Brand>
+        <Navbar.Brand as={Link} to="/">TMS</Navbar.Brand>
         <Navbar.Toggle aria-controls="basic-navbar-nav" />
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="me-auto">

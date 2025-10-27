@@ -12,37 +12,38 @@ function generateStudentId() {
 const firstNames = ["Sahan", "Isuru", "Dahami", "Nimal", "Kamal", "Sunil", "Priya", "Malith", "Ruwan", "Ayesha", "Kasun", "Chamari", "Mahela", "Kumar", "Lasith", "Thisara", "Anjelo", "Dilshan", "Sanath", "Muthiah"];
 const lastNames = ["Perera", "Silva", "Fernando", "Jayasuriya", "Bandara", "Gunarathne", "Kumari", "Senanayake", "Kumara", "Dissanayake"];
 const grades = ["Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11"];
-
-// --- MODIFIED: Your new locations ---
+// --- Your new locations ---
 const locations = ["Vishwa - Mawanella", "Sonetto - Mawanella", "Life - Mawanella"];
-// ------------------------------------
 
 // Helper to pick a random item from an array
 const randomElement = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // --- Main script function ---
 async function seedDatabase() {
-    // 1. Connect to Database (Uses MONGO_URI from your .env file)
-    const dbUri = process.env.MONGODB_URI;
+    // 1. Connect to Database
+    // --- TEMPORARILY HARDCODED to your LIVE Atlas DB ---
+    const dbUri = "mongodb+srv://12isurukumarasiri_db_user:bxJBU3AiklJINoaF@cluster0.aubmmtx.mongodb.net/tutionDB?retryWrites=true&w=majority&appName=Cluster0";
+    
     if (!dbUri) {
-        console.error('Error: MONGODB_URI is not defined. Check your .env file.');
+        console.error('Error: dbUri string is empty!');
         process.exit(1);
     }
+    console.log("Connecting directly to LIVE ATLAS Database...");
+    // --- END OF TEMPORARY CHANGE ---
 
     try {
         await mongoose.connect(dbUri);
-        console.log(`Connected to MongoDB Atlas...`); // Live DB connection
+        console.log(`Connected to MongoDB Atlas...`);
 
-        // Check if locations exist in DB (important!)
+        // Check if locations exist
         const dbLocations = await mongoose.connection.db.collection('locations').find({}).toArray();
         const locationNames = dbLocations.map(loc => loc.name);
         console.log("Locations found in database:", locationNames);
         
-        // Check if script locations match DB locations
         const allLocationsExist = locations.every(loc => locationNames.includes(loc));
         if (!allLocationsExist) {
-            console.error("Error: Not all locations in the script exist in your 'locations' collection in the database.");
-            console.log("Please go to your website's Settings page and add these locations first:", locations);
+            console.error("Error: Not all locations in the script exist in your 'locations' collection.");
+            console.log("Please go to your live website's Settings page and add these locations first:", locations);
             await mongoose.disconnect();
             return;
         }
@@ -50,13 +51,11 @@ async function seedDatabase() {
 
         console.log('Starting to create 20 random students...');
 
-        // We run this 20 times, one after another, to ensure unique IDs
         for (let i = 0; i < 20; i++) {
             let uniqueIdFound = false;
             let generatedId;
             let attempts = 0;
 
-            // Loop to find a unique ID (max 10 tries per student)
             while (!uniqueIdFound && attempts < 10) {
                 generatedId = generateStudentId();
                 const existing = await Student.findOne({ studentId: generatedId });
@@ -68,21 +67,19 @@ async function seedDatabase() {
 
             if (!uniqueIdFound) {
                 console.warn(`Could not find a unique ID for student ${i + 1}, skipping.`);
-                continue; // Skip this student and move to the next
+                continue;
             }
 
-            // Create the new student object
             const student = new Student({
                 studentId: generatedId,
                 name: `${randomElement(firstNames)} ${randomElement(lastNames)}`,
                 grade: randomElement(grades),
-                location: randomElement(locations), // Will pick one of your 3 locations
+                location: randomElement(locations),
                 contactPhone: `07${Math.floor(10000000 + Math.random() * 90000000)}`,
                 parentName: `Parent of ${firstNames[i]}`,
                 isActive: true
             });
 
-            // Save the student to the database
             await student.save();
             console.log(`Added: ${student.name} (ID: ${student.studentId})`);
         }
@@ -93,7 +90,6 @@ async function seedDatabase() {
     } catch (err) {
         console.error('\nAn error occurred during seeding:', err.message);
     } finally {
-        // 4. Disconnect from Database
         await mongoose.disconnect();
         console.log('MongoDB disconnected.');
     }
