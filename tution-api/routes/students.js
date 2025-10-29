@@ -98,4 +98,27 @@ router.delete('/:id', async (req, res) => {
 });
 
 
+// --- NEW: GET student by their 4-digit studentId ---
+// GET /api/students/by-id/1234
+router.get('/by-id/:studentId', async (req, res) => {
+    try {
+        console.log(`API: Searching for studentId: ${req.params.studentId}`);
+        const student = await Student.findOne({ 
+            studentId: req.params.studentId, 
+            isActive: true // Only find active students
+        });
+
+        if (student == null) {
+            console.log("API: Student not found.");
+            return res.status(404).json({ message: 'Cannot find active student with this ID' });
+        }
+
+        console.log("API: Student found:", student.name);
+        res.json(student); // Send back the full student object
+    } catch (err) {
+        console.error("API Error:", err.message);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;

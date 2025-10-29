@@ -11,3 +11,41 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+@media print {
+  /* Hide everything on the page by default when printing */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Show *only* the content inside our QR modal */
+  .qr-print-modal .modal-content, .qr-print-modal .modal-content * {
+    visibility: visible;
+  }
+
+  /* Position the modal content to take over the whole print page */
+  .qr-print-modal .modal-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide the modal's header (X button) and footer (Close button) */
+  .qr-print-modal .modal-header,
+  .qr-print-modal .modal-footer {
+    display: none !important;
+  }
+
+  /* Center the QR code in the modal body */
+   .qr-print-modal .modal-body {
+      text-align: center;
+   }
+   
+   /* Hide the "Print ID Card" button itself from the printed page */
+   .qr-print-modal .modal-body .btn {
+       display: none !important;
+   }
+}

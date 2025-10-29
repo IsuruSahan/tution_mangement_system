@@ -11,6 +11,7 @@ import PaymentsPage from './pages/PaymentsPage';
 import AttendancePage from './pages/AttendancePage';
 import FinanceReportPage from './pages/FinanceReportPage';
 import SettingsPage from './pages/SettingsPage';
+import ScanCheckInPage from './pages/ScanCheckInPage';
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
           {/* --- THIS IS THE MISSING LINE --- */}
           <Route path="/finance-report" element={<FinanceReportPage />} />
           <Route path="/settings" element={<SettingsPage />} /> 
+          <Route path="/scan" element={<ScanCheckInPage />} />
           
           {/* You can add a 404 "Not Found" page later */}
         </Routes>
