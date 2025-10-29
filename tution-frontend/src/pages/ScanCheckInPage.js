@@ -1,21 +1,19 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { QrReader } from 'react-qr-reader';
-// --- ADDED Row and Col TO THIS IMPORT ---
 import { Container, Card, Button, Spinner, Alert, ListGroup, Form, Row, Col } from 'react-bootstrap';
 import { FaCheckCircle, FaTimesCircle, FaUser } from 'react-icons/fa';
 
 function ScanCheckInPage() {
-    const [scannedStudent, setScannedStudent] = useState(null); // Will hold student data
+    const [scannedStudent, setScannedStudent] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
     const apiUrl = process.env.REACT_APP_API_URL;
 
-    // Called when the QR scanner successfully scans a code
     const handleScanResult = async (result, error) => {
-        if (!!result && !loading && !scannedStudent) { // Only process if we have a result and aren't busy
+        if (!!result && !loading && !scannedStudent) {
             const studentId = result?.text;
             if (studentId) {
                 setLoading(true);
@@ -24,13 +22,11 @@ function ScanCheckInPage() {
                 console.log(`Scanned ID: ${studentId}`);
 
                 try {
-                    // Use our new API route to get student details
                     const response = await axios.get(`${apiUrl}/api/students/by-id/${studentId}`);
-                    setScannedStudent(response.data); // Save the student object
+                    setScannedStudent(response.data);
                 } catch (err) {
                     console.error("Error fetching student by ID:", err);
                     setError(`Failed to find student with ID: ${studentId}. ${err.response?.data?.message || ''}`);
-                    // Automatically reset after 3 seconds on error
                     setTimeout(resetScanner, 3000);
                 } finally {
                     setLoading(false);
@@ -38,72 +34,23 @@ function ScanCheckInPage() {
             }
         }
         if (!!error) {
-            // console.info(error); // Optional: log scan errors
+            // console.info(error);
         }
     };
 
-    // --- Action Handlers ---
-
-    // Mark student as PRESENT
-    const handleMarkPresent = async () => {
+    // --- Action Handlers (Unchanged) ---
+    const handleMarkPresent = async () => { /* ... unchanged ... */
         setLoading(true); setError(''); setSuccess('');
-        try {
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-            
-            await axios.post(`${apiUrl}/api/attendance/mark`, {
-                studentId: scannedStudent._id, // Use the MongoDB _id
-                date: today,
-                status: 'Present',
-                classGrade: scannedStudent.grade, // Pass grade/location from student
-                location: scannedStudent.location
-            });
-            setSuccess(`${scannedStudent.name} marked as PRESENT for today.`);
-        } catch (err) {
-            console.error("Error marking present:", err);
-            setError(`Failed to mark present: ${err.response?.data?.message || err.message}`);
-        } finally {
-            setLoading(false);
-        }
+        try { const today = new Date().toISOString().split('T')[0]; await axios.post(`${apiUrl}/api/attendance/mark`, { studentId: scannedStudent._id, date: today, status: 'Present', classGrade: scannedStudent.grade, location: scannedStudent.location }); setSuccess(`${scannedStudent.name} marked as PRESENT for today.`); } catch (err) { console.error("Error marking present:", err); setError(`Failed to mark present: ${err.response?.data?.message || err.message}`); } finally { setLoading(false); }
     };
-
-    // Mark student as PAID
-    const handleMarkPaid = async () => {
-        // 1. Ask for the amount
-        const amount = window.prompt(`Enter payment amount for ${scannedStudent.name}:`, '2000');
-        if (amount === null || isNaN(Number(amount)) || Number(amount) <= 0) {
-            setError("Payment cancelled or invalid amount.");
-            return;
-        }
-
-        setLoading(true); setError(''); setSuccess('');
-        try {
-            const today = new Date();
-            const month = today.toLocaleString('default', { month: 'long' });
-            const year = today.getFullYear();
-
-            await axios.post(`${apiUrl}/api/payments/mark`, {
-                studentId: scannedStudent._id, // Use MongoDB _id
-                month,
-                year,
-                status: 'Paid',
-                amount: Number(amount)
-            });
-            setSuccess(`${scannedStudent.name} marked as PAID (LKR ${amount}) for ${month} ${year}.`);
-        } catch (err) {
-            console.error("Error marking paid:", err);
-            setError(`Failed to mark paid: ${err.response?.data?.message || err.message}`);
-        } finally {
-            setLoading(false);
-        }
+    const handleMarkPaid = async () => { /* ... unchanged ... */
+        const amount = window.prompt(`Enter payment amount for ${scannedStudent.name}:`, '2000'); if (amount === null || isNaN(Number(amount)) || Number(amount) <= 0) { setError("Payment cancelled or invalid amount."); return; } setLoading(true); setError(''); setSuccess(''); try { const today = new Date(); const month = today.toLocaleString('default', { month: 'long' }); const year = today.getFullYear(); await axios.post(`${apiUrl}/api/payments/mark`, { studentId: scannedStudent._id, month, year, status: 'Paid', amount: Number(amount) }); setSuccess(`${scannedStudent.name} marked as PAID (LKR ${amount}) for ${month} ${year}.`); } catch (err) { console.error("Error marking paid:", err); setError(`Failed to mark paid: ${err.response?.data?.message || err.message}`); } finally { setLoading(false); }
     };
-
-    // Reset the view to scan again
-    const resetScanner = () => {
-        setScannedStudent(null);
-        setError('');
-        setSuccess('');
-        setLoading(false);
+    const resetScanner = () => { /* ... unchanged ... */
+        setScannedStudent(null); setError(''); setSuccess(''); setLoading(false);
     };
+    // --- End Action Handlers ---
+
 
     // --- Render Logic ---
 
@@ -118,11 +65,18 @@ function ScanCheckInPage() {
                             <Card.Body>
                                 {error && <Alert variant="danger">{error}</Alert>}
                                 {loading && <div className="text-center"><Spinner animation="border" /></div>}
-                                <QrReader
-                                    onResult={handleScanResult}
-                                    constraints={{ facingMode: 'environment' }} // Use back camera
-                                    containerStyle={{ width: '100%' }}
-                                />
+
+                                {/* --- THIS IS THE FIX --- */}
+                                <div className="qr-scanner-container">
+                                    <QrReader
+                                        onResult={handleScanResult}
+                                        constraints={{ facingMode: 'environment' }}
+                                        containerStyle={{ width: '100%', height: '100%' }} // Let section handle size
+                                        // Removed videoStyle prop
+                                    />
+                                </div>
+                                {/* --- END OF FIX --- */}
+
                                 <p className="text-center text-muted mt-3">Point camera at the student's QR code</p>
                             </Card.Body>
                         </Card>
@@ -143,43 +97,21 @@ function ScanCheckInPage() {
                         </Card.Header>
                         <Card.Body>
                             <ListGroup variant="flush" className="mb-3">
-                                <ListGroup.Item>
-                                    <strong>ID:</strong> {scannedStudent.studentId}
-                                </ListGroup.Item>
-                                <ListGroup.Item>
-                                    <strong>Grade:</strong> {scannedStudent.grade}
-                                </ListGroup.Item>
-                                <ListGroup.Item>
-                                    <strong>Location:</strong> {scannedStudent.location}
-                                </ListGroup.Item>
+                                <ListGroup.Item><strong>ID:</strong> {scannedStudent.studentId}</ListGroup.Item>
+                                <ListGroup.Item><strong>Grade:</strong> {scannedStudent.grade}</ListGroup.Item>
+                                <ListGroup.Item><strong>Location:</strong> {scannedStudent.location}</ListGroup.Item>
                             </ListGroup>
-
                             {error && <Alert variant="danger" className="mt-3">{error}</Alert>}
                             {success && <Alert variant="success" className="mt-3">{success}</Alert>}
-
                             <div className="d-grid gap-2">
-                                <Button 
-                                    variant="success" 
-                                    size="lg" 
-                                    onClick={handleMarkPresent} 
-                                    disabled={loading || success.includes('PRESENT')}
-                                >
+                                <Button variant="success" size="lg" onClick={handleMarkPresent} disabled={loading || success.includes('PRESENT')}>
                                     {loading ? <Spinner as="span" size="sm" /> : 'Mark PRESENT'}
                                 </Button>
-                                <Button 
-                                    variant="primary" 
-                                    size="lg" 
-                                    onClick={handleMarkPaid}
-                                    disabled={loading || success.includes('PAID')}
-                                >
+                                <Button variant="primary" size="lg" onClick={handleMarkPaid} disabled={loading || success.includes('PAID')}>
                                     {loading ? <Spinner as="span" size="sm" /> : 'Mark PAID'}
                                 </Button>
                                 <hr />
-                                <Button 
-                                    variant="secondary" 
-                                    onClick={resetScanner} 
-                                    disabled={loading}
-                                >
+                                <Button variant="secondary" onClick={resetScanner} disabled={loading}>
                                     <FaTimesCircle className="me-2" /> Scan Next Student
                                 </Button>
                             </div>
