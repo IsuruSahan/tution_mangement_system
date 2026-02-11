@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react'; // Added useEffect
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Container, Row, Col, Form, Button, Card, Table, Spinner, Alert, Badge } from 'react-bootstrap';
+import { useAuth } from '../context/AuthContext'; // Import Auth hook
 
-// Helper array for month dropdown (unchanged)
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function PaymentsPage() {
-    // --- State (unchanged) ---
+    const { teacher } = useAuth(); // Access teacher global state
+    
+    // --- State ---
     const [month, setMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
     const [year, setYear] = useState(new Date().getFullYear());
     const [grade, setGrade] = useState('All');
@@ -18,66 +20,57 @@ function PaymentsPage() {
     const [locations, setLocations] = useState([]);
     const [locationLoading, setLocationLoading] = useState(true);
 
-    // --- Fetch locations (Uses Environment Variable) ---
+    const apiUrl = process.env.REACT_APP_API_URL;
+
+    // --- Fetch Locations (Auth-Aware) ---
     useEffect(() => {
         const fetchLocations = async () => {
             setLocationLoading(true);
-            setError(''); // Clear page-specific errors on load
+            setError(''); 
             try {
-                // Get API URL from environment
-                const apiUrl = process.env.REACT_APP_API_URL;
-                if (!apiUrl) {
-                    throw new Error("API URL is not configured. Check Vercel environment variables or local .env file.");
-                }
-                const res = await axios.get(`${apiUrl}/api/locations`); // Use apiUrl
+                if (!apiUrl) throw new Error("API URL is not configured.");
+                const res = await axios.get(`${apiUrl}/api/locations`);
                 setLocations(res.data);
             } catch (err) {
                 console.error("Failed to fetch locations:", err);
-                setError(`Failed to load locations list: ${err.message}`); // Set specific error
+                setError(`Failed to load locations: ${err.response?.data?.message || err.message}`);
             } finally {
                 setLocationLoading(false);
             }
         };
-        fetchLocations();
-    }, []); // Runs once on mount
+        if (teacher) fetchLocations();
+    }, [teacher, apiUrl]);
 
-    // --- Updates the 'amounts' state (Unchanged) ---
     const handleAmountChange = (studentId, amount) => {
-        setAmounts(prevAmounts => ({ ...prevAmounts, [studentId]: amount }));
+        setAmounts(prev => ({ ...prev, [studentId]: amount }));
     };
 
-    // --- Load the Student List (Uses Environment Variable) ---
+    // --- Load Student Payment List (Auth-Aware) ---
     const loadStudentPaymentList = async () => {
         setLoading(true);
-        setError(''); // Clear previous errors
+        setError(''); 
         setStudentList([]);
         setAmounts({});
         try {
-            // Get API URL from environment
-            const apiUrl = process.env.REACT_APP_API_URL;
-            if (!apiUrl) {
-                throw new Error("API URL is not configured.");
-            }
-            const response = await axios.get(`${apiUrl}/api/payments/statuslist`, { // Use apiUrl
+            if (!apiUrl) throw new Error("API URL is not configured.");
+            
+            // Axios automatically attaches the Bearer token here
+            const response = await axios.get(`${apiUrl}/api/payments/statuslist`, {
                 params: { month, year, grade, location }
             });
             setStudentList(response.data);
         } catch (err) {
-            console.error("Error loading student payment list:", err);
-            setError(`Error loading student list: ${err.response?.data?.message || err.message}`);
+            console.error("Error loading payment list:", err);
+            setError(`Error loading list: ${err.response?.data?.message || err.message}`);
         } finally {
             setLoading(false);
         }
     };
 
-    // --- Mark a student as Paid or Pending (Uses Environment Variable) ---
+    // --- Mark Payment (Auth-Aware) ---
     const handleMarkPayment = async (studentId, newStatus) => {
         try {
-            // Get API URL from environment
-            const apiUrl = process.env.REACT_APP_API_URL;
-            if (!apiUrl) {
-                throw new Error("API URL is not configured.");
-            }
+            if (!apiUrl) throw new Error("API URL is not configured.");
 
             let paymentData = { studentId, month, year, status: newStatus };
             if (newStatus === 'Paid') {
@@ -89,62 +82,57 @@ function PaymentsPage() {
                 paymentData.amount = Number(amountToSave);
             }
 
-            const response = await axios.post(`${apiUrl}/api/payments/mark`, paymentData); // Use apiUrl
+            // Secure POST request tagged with teacherId on the backend
+            const response = await axios.post(`${apiUrl}/api/payments/mark`, paymentData);
             const updatedPayment = response.data;
-            // Update the state immutably
+
             setStudentList(currentList =>
                 currentList.map(item => {
                     if (item.student._id === studentId) {
-                        // Return a new object with updated status and amount
                         return { ...item, status: updatedPayment.status, amount: updatedPayment.amount };
                     }
-                    return item; // Keep other items the same
+                    return item;
                 })
             );
-            // Clear the amount input only if successfully marked as Paid
+
             if (newStatus === 'Paid') {
                 setAmounts(prev => {
                     const next = { ...prev };
-                    delete next[studentId]; // Remove the entry instead of setting to ''
+                    delete next[studentId];
                     return next;
                 });
             }
         } catch (err) {
             console.error("Error updating payment status:", err);
-            // Show more specific error from backend if available
-            alert(`Failed to update status: ${err.response?.data?.message || err.message}`);
+            alert(`Failed to update: ${err.response?.data?.message || err.message}`);
         }
     };
 
-    // --- Render JSX ---
     return (
         <Container className="mt-4">
-            <Card className="mb-4">
-                <Card.Body>
-                    <Card.Title>Manage Monthly Payments</Card.Title>
+            <Card className="shadow-sm border-0 mb-4">
+                <Card.Body className="p-4">
+                    <Card.Title className="fw-bold mb-4">Financial Records: {teacher?.instituteName}</Card.Title>
                     {error && <Alert variant="danger">{error}</Alert>}
                     <Form>
-                        <Row>
-                            {/* --- Month Filter --- */}
+                        <Row className="g-3">
                             <Col md={3}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Month</Form.Label>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Select Month</Form.Label>
                                     <Form.Select value={month} onChange={(e) => setMonth(e.target.value)}>
                                         {months.map(m => <option key={m} value={m}>{m}</option>)}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Year Filter --- */}
                             <Col md={2}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Year</Form.Label>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Year</Form.Label>
                                     <Form.Control type="number" value={year} onChange={(e) => setYear(e.target.value)} />
                                 </Form.Group>
                             </Col>
-                            {/* --- Grade Filter --- */}
                             <Col md={3}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Grade</Form.Label>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Grade Filter</Form.Label>
                                     <Form.Select value={grade} onChange={(e) => setGrade(e.target.value)}>
                                         <option value="All">All Grades</option>
                                         <option value="Grade 6">Grade 6</option>
@@ -156,30 +144,24 @@ function PaymentsPage() {
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Location Filter --- */}
                             <Col md={2}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Location</Form.Label>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Location</Form.Label>
                                     <Form.Select
                                         value={location}
                                         onChange={(e) => setLocation(e.target.value)}
                                         disabled={locationLoading}
                                     >
                                         <option value="All">All Locations</option>
-                                        {locationLoading ? (
-                                            <option disabled>Loading...</option>
-                                        ) : (
-                                            locations.map(loc => (
-                                                <option key={loc._id} value={loc.name}>{loc.name}</option>
-                                            ))
-                                        )}
+                                        {!locationLoading && locations.map(loc => (
+                                            <option key={loc._id} value={loc.name}>{loc.name}</option>
+                                        ))}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Load Button --- */}
-                            <Col md={2} className="d-flex align-items-end mb-3">
-                                <Button onClick={loadStudentPaymentList} className="w-100" disabled={loading || locationLoading}>
-                                    {loading ? <Spinner as="span" size="sm" /> : 'Load'}
+                            <Col md={2} className="d-flex align-items-end">
+                                <Button onClick={loadStudentPaymentList} variant="primary" className="w-100 fw-bold" disabled={loading}>
+                                    {loading ? <Spinner as="span" size="sm" /> : 'Fetch List'}
                                 </Button>
                             </Col>
                         </Row>
@@ -187,51 +169,53 @@ function PaymentsPage() {
                 </Card.Body>
             </Card>
 
-            {/* --- Student Payment List Table --- */}
-            {loading && <div className="text-center"><Spinner animation="border" /></div>}
-            {!loading && studentList.length > 0 && (
-                <Table striped bordered hover responsive>
-                    <thead>
+            {studentList.length > 0 ? (
+                <Table striped borderless hover responsive className="bg-white shadow-sm rounded">
+                    <thead className="table-dark">
                         <tr>
-                            <th>Student Name</th>
+                            <th>Student Details</th>
                             <th>Grade</th>
                             <th>Location</th>
-                            <th>Amount (LKR)</th>
+                            <th>Fee Amount</th>
                             <th>Status</th>
-                            <th>Action</th>
+                            <th className="text-center">Action</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="align-middle">
                         {studentList.map(item => (
                             <tr key={item.student._id}>
-                                {/* --- MODIFIED CELL --- */}
-                                <td>{item.student.name} ({item.student.studentId || 'No ID'})</td>
-                                {/* --- END MODIFICATION --- */}
+                                <td>
+                                    <div className="fw-bold">{item.student.name}</div>
+                                    <small className="text-muted">ID: {item.student.studentId}</small>
+                                </td>
                                 <td>{item.student.grade}</td>
                                 <td>{item.student.location}</td>
-                                <td> {/* Amount Cell */}
+                                <td style={{ minWidth: '150px' }}>
                                     {item.status === 'Paid' ? (
-                                        `LKR ${item.amount != null ? item.amount.toLocaleString() : 'N/A'}` // Handle null amount
+                                        <span className="fw-bold">LKR {(item.amount || 0).toLocaleString()}</span>
                                     ) : (
                                         <Form.Control
+                                            size="sm"
                                             type="number"
-                                            placeholder="Enter amount"
+                                            placeholder="Enter LKR"
                                             value={amounts[item.student._id] || ''}
                                             onChange={(e) => handleAmountChange(item.student._id, e.target.value)}
                                         />
                                     )}
                                 </td>
-                                <td> {/* Status Badge */}
-                                    <Badge bg={item.status === 'Paid' ? 'success' : 'warning'}>{item.status}</Badge>
+                                <td>
+                                    <Badge pill bg={item.status === 'Paid' ? 'success' : 'warning'} className="px-3">
+                                        {item.status.toUpperCase()}
+                                    </Badge>
                                 </td>
-                                <td> {/* Action Buttons */}
+                                <td className="text-center">
                                     {item.status === 'Pending' ? (
-                                        <Button variant="success" size="sm" onClick={() => handleMarkPayment(item.student._id, 'Paid')}>
-                                            Save Paid
+                                        <Button variant="outline-success" size="sm" onClick={() => handleMarkPayment(item.student._id, 'Paid')}>
+                                            Mark Paid
                                         </Button>
                                     ) : (
-                                        <Button variant="warning" size="sm" onClick={() => handleMarkPayment(item.student._id, 'Pending')}>
-                                            Mark as Pending
+                                        <Button variant="outline-danger" size="sm" onClick={() => handleMarkPayment(item.student._id, 'Pending')}>
+                                            Undo Payment
                                         </Button>
                                     )}
                                 </td>
@@ -239,10 +223,12 @@ function PaymentsPage() {
                         ))}
                     </tbody>
                 </Table>
-            )}
-            {/* Message if no students found */}
-            {!loading && studentList.length === 0 && (
-                <Alert variant="info">Select your filters and click "Load" to see the student payment list.</Alert>
+            ) : (
+                !loading && (
+                    <Alert variant="light" className="text-center border py-5">
+                        <p className="mb-0 text-muted fs-5">Use the filters above to load the student list for payment processing.</p>
+                    </Alert>
+                )
             )}
         </Container>
     );

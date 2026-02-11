@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-// Removed InputGroup, kept Table, Badge etc.
 import { Container, Row, Col, Form, Button, Card, ListGroup, Spinner, Alert, Tabs, Tab, Table, Badge } from 'react-bootstrap';
-// Chart imports are removed as the chart is removed
+import { useAuth } from '../context/AuthContext'; // Import Auth context
 
 const getISODate = (date) => date.toISOString().split('T')[0];
 
 function AttendancePage() {
-    // --- State: Take Attendance ---
+    const { teacher } = useAuth(); // Access global teacher state
+
+    // --- Take Attendance State ---
     const [takeGrade, setTakeGrade] = useState('Grade 6');
     const [takeLocation, setTakeLocation] = useState('');
     const [takeDate, setTakeDate] = useState(getISODate(new Date()));
@@ -16,14 +17,14 @@ function AttendancePage() {
     const [takeLoading, setTakeLoading] = useState(false);
     const [takeError, setTakeError] = useState('');
 
-    // --- State: Shared ---
+    // --- Shared & Initial State ---
     const [locations, setLocations] = useState([]);
     const [locationLoading, setLocationLoading] = useState(true);
     const [locationError, setLocationError] = useState('');
     const [allActiveStudents, setAllActiveStudents] = useState([]);
     const [studentsLoading, setStudentsLoading] = useState(true);
 
-    // --- State: Student Report ---
+    // --- Report State ---
     const [selectedStudentId, setSelectedStudentId] = useState('');
     const [studentRecords, setStudentRecords] = useState([]);
     const [reportLoading, setReportLoading] = useState(false);
@@ -34,90 +35,76 @@ function AttendancePage() {
     const [reportLocationFilter, setReportLocationFilter] = useState('All');
     const [reportNameFilter, setReportNameFilter] = useState('');
     const [filteredStudentsForReport, setFilteredStudentsForReport] = useState([]);
-    const [filterApplied, setFilterApplied] = useState(false); // For report tab validation
+    const [filterApplied, setFilterApplied] = useState(false);
 
-    // --- Initial Data Fetch (Uses Env Var) ---
+    const apiUrl = process.env.REACT_APP_API_URL;
+
+    // --- Initial Secure Data Fetch ---
     useEffect(() => {
         const fetchData = async () => {
-            setLocationLoading(true); setStudentsLoading(true);
-            const apiUrl = process.env.REACT_APP_API_URL;
-            if (!apiUrl) {
-                 setLocationError("API URL is not configured. Check Vercel/local .env file.");
-                 setLocationLoading(false);
-                 setStudentsLoading(false);
-                 return;
-            }
-            // Fetch Locations
+            if (!teacher) return;
+            
+            setLocationLoading(true); 
+            setStudentsLoading(true);
+            
             try {
+                // 1. Fetch Teacher's Locations
                 const locRes = await axios.get(`${apiUrl}/api/locations`);
                 setLocations(locRes.data);
                 if (locRes.data.length > 0 && !takeLocation) {
                     setTakeLocation(locRes.data[0].name);
                 }
-            } catch (err) {
-                console.error("Failed to fetch locations:", err);
-                setLocationError("Failed to load locations list.");
-            } finally {
-                setLocationLoading(false);
-            }
-            // Fetch All Active Students
-            try {
+
+                // 2. Fetch Teacher's Active Students
                 const stuRes = await axios.get(`${apiUrl}/api/students`);
                 setAllActiveStudents(stuRes.data);
-                setFilteredStudentsForReport(stuRes.data); // Init with all
+                setFilteredStudentsForReport(stuRes.data);
             } catch (err) {
-                console.error("Failed to fetch all students:", err);
-                setLocationError(prev => prev ? prev + " Failed to load student list." : "Failed to load student list.");
+                console.error("Initialization error:", err);
+                setLocationError("Failed to synchronize your account data.");
             } finally {
-                 setStudentsLoading(false);
+                setLocationLoading(false);
+                setStudentsLoading(false);
             }
         };
         fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [teacher, apiUrl]);
 
-    // --- Load Class for "Take Attendance" (Uses Env Var) ---
+    // --- Mark Attendance (Auth-Aware) ---
     const handleLoadClass = async () => {
         setTakeLoading(true); setTakeError(''); setStudentsForClass([]); setAttendanceStatus({});
-        if (!takeLocation && locations.length > 0) {
-            setTakeError('Please select a location.');
+        if (!takeLocation) {
+            setTakeError('Please select a location first.');
             setTakeLoading(false);
             return;
         }
         try {
-            const apiUrl = process.env.REACT_APP_API_URL;
-            if (!apiUrl) throw new Error("API URL not configured.");
-
             const stuRes = await axios.get(`${apiUrl}/api/students`, { params: { grade: takeGrade, location: takeLocation } });
             setStudentsForClass(stuRes.data);
+            
             const attRes = await axios.get(`${apiUrl}/api/attendance/class`, { params: { date: takeDate, grade: takeGrade, location: takeLocation } });
             const map = attRes.data.reduce((acc, rec) => { if (rec.student?._id) acc[rec.student._id] = rec.status; return acc; }, {});
             setAttendanceStatus(map);
         } catch (err) {
-             console.error("Error loading class:", err);
-             setTakeError('Error loading class data. ' + (err.response?.data?.message || err.message));
-         }
-        setTakeLoading(false);
-     };
+             setTakeError(err.response?.data?.message || 'Error loading class data.');
+        } finally { setTakeLoading(false); }
+    };
 
-    // --- Mark Attendance (Uses Env Var) ---
     const handleMarkAttendance = async (studentId, status) => {
         setAttendanceStatus(prev => ({ ...prev, [studentId]: status }));
         try {
-            const apiUrl = process.env.REACT_APP_API_URL;
-            if (!apiUrl) throw new Error("API URL not configured.");
-            await axios.post(`${apiUrl}/api/attendance/mark`, { studentId, date: takeDate, status, classGrade: takeGrade, location: takeLocation });
+            await axios.post(`${apiUrl}/api/attendance/mark`, { 
+                studentId, date: takeDate, status, classGrade: takeGrade, location: takeLocation 
+            });
         } catch (err) {
-             console.error("Error saving attendance:", err);
-             setTakeError('Error saving attendance.');
+             setTakeError('Failed to sync record. Please try again.');
              setAttendanceStatus(prev => { const curr = {...prev}; delete curr[studentId]; return curr; });
-         }
+        }
     };
 
-    // --- Filter students for the report dropdown ---
+    // --- Report Logic (Auth-Aware) ---
     const handleFilterStudentsForReport = () => {
         setReportError('');
-        if (studentsLoading) return;
         const filtered = allActiveStudents.filter(student => {
             const gradeMatch = reportGradeFilter === 'All' || student.grade === reportGradeFilter;
             const locationMatch = reportLocationFilter === 'All' || student.location === reportLocationFilter;
@@ -126,152 +113,162 @@ function AttendancePage() {
         });
         setFilteredStudentsForReport(filtered);
         setSelectedStudentId('');
-        setStudentRecords([]);
-        setFilterApplied(true); // Set flag
+        setFilterApplied(true);
     };
 
-    // --- Fetch attendance for selected student (Report Tab) (Uses Env Var) ---
     useEffect(() => {
         const fetchStudentAttendance = async () => {
-            if (!selectedStudentId) { setStudentRecords([]); return; }
-            setReportLoading(true); setReportError(''); setStudentRecords([]);
+            if (!selectedStudentId) return;
+            setReportLoading(true); 
             try {
-                const apiUrl = process.env.REACT_APP_API_URL;
-                if (!apiUrl) throw new Error("API URL not configured.");
-
-                const params = {};
-                if (reportStartDate) params.startDate = reportStartDate;
-                if (reportEndDate) params.endDate = reportEndDate;
+                const params = {
+                    startDate: reportStartDate || undefined,
+                    endDate: reportEndDate || undefined
+                };
                 const response = await axios.get(`${apiUrl}/api/attendance/student/${selectedStudentId}`, { params });
                 setStudentRecords(response.data);
             } catch (err) {
-                console.error("Failed student attendance:", err);
-                setReportError('Could not load attendance records.');
-            } finally {
-                setReportLoading(false);
-            }
+                setReportError('Could not retrieve specific attendance records.');
+            } finally { setReportLoading(false); }
         };
+        fetchStudentAttendance();
+    }, [selectedStudentId, reportStartDate, reportEndDate, apiUrl]);
 
-        if (selectedStudentId) { fetchStudentAttendance(); }
-        else { setStudentRecords([]); }
-    }, [selectedStudentId, reportStartDate, reportEndDate]);
-
-    // --- Helper function to reset filterApplied state ---
     const handleReportFilterChange = (setter) => (e) => {
         setter(e.target.value);
-        setFilterApplied(false); // Reset validation
+        setFilterApplied(false);
         setSelectedStudentId('');
-        setStudentRecords([]);
     };
 
-    // --- Helper to format date ---
     const formatDate = (dateString) => new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
-    // --- RENDER JSX ---
     return (
-        <Container className="mt-4">
-            <Tabs defaultActiveKey="takeAttendance" id="attendance-tabs" className="mb-3">
+        <Container className="mt-4 pb-5">
+            <div className="mb-4">
+                <h2 className="fw-bold">Attendance Management</h2>
+                <p className="text-muted">Recording logs for: <strong>{teacher?.instituteName}</strong></p>
+            </div>
 
-                {/* --- TAB 1: Take Attendance --- */}
-                <Tab eventKey="takeAttendance" title="Take Attendance">
-                   <Card className="mb-4">
-                       <Card.Body>
-                            {locationError && <Alert variant="danger">{locationError}</Alert>}
-                            {takeError && <Alert variant="danger">{takeError}</Alert>}
+            <Tabs defaultActiveKey="takeAttendance" className="custom-tabs mb-4">
+                <Tab eventKey="takeAttendance" title="Manual Check-in">
+                   <Card className="shadow-sm border-0 mb-4">
+                       <Card.Body className="p-4">
+                            {locationError && <Alert variant="danger" size="sm">{locationError}</Alert>}
                             <Form>
-                                <Row>
-                                    <Col md={3}> <Form.Group className="mb-3"> <Form.Label>Grade</Form.Label> <Form.Select value={takeGrade} onChange={(e) => setTakeGrade(e.target.value)}> <option value="Grade 6">Grade 6</option> <option value="Grade 7">Grade 7</option> <option value="Grade 8">Grade 8</option> <option value="Grade 9">Grade 9</option> <option value="Grade 10">Grade 10</option> <option value="Grade 11">Grade 11</option> </Form.Select> </Form.Group> </Col>
-                                    <Col md={3}> <Form.Group className="mb-3"> <Form.Label>Location</Form.Label> <Form.Select value={takeLocation} onChange={(e) => setTakeLocation(e.target.value)} disabled={locationLoading}> {locationLoading ? (<option>Loading...</option>) : ( locations.length > 0 ? ( locations.map(loc => (<option key={loc._id} value={loc.name}>{loc.name}</option>)) ) : (<option value="">No locations configured</option>) )} </Form.Select> </Form.Group> </Col>
-                                    <Col md={3}> <Form.Group className="mb-3"> <Form.Label>Date</Form.Label> <Form.Control type="date" value={takeDate} onChange={(e) => setTakeDate(e.target.value)} /> </Form.Group> </Col>
-                                    <Col md={3} className="d-flex align-items-end mb-3"> <Button onClick={handleLoadClass} className="w-100" disabled={takeLoading || locationLoading}> {takeLoading ? <Spinner as="span" size="sm" /> : 'Load Class'} </Button> </Col>
+                                <Row className="g-3">
+                                    <Col md={3}>
+                                        <Form.Group>
+                                            <Form.Label className="small fw-bold">Select Grade</Form.Label>
+                                            <Form.Select value={takeGrade} onChange={(e) => setTakeGrade(e.target.value)}>
+                                                <option value="Grade 6">Grade 6</option><option value="Grade 7">Grade 7</option>
+                                                <option value="Grade 8">Grade 8</option><option value="Grade 9">Grade 9</option>
+                                                <option value="Grade 10">Grade 10</option><option value="Grade 11">Grade 11</option>
+                                            </Form.Select>
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={3}>
+                                        <Form.Group>
+                                            <Form.Label className="small fw-bold">Location</Form.Label>
+                                            <Form.Select value={takeLocation} onChange={(e) => setTakeLocation(e.target.value)} disabled={locationLoading}>
+                                                {locations.map(loc => (<option key={loc._id} value={loc.name}>{loc.name}</option>))}
+                                            </Form.Select>
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={3}>
+                                        <Form.Group>
+                                            <Form.Label className="small fw-bold">Session Date</Form.Label>
+                                            <Form.Control type="date" value={takeDate} onChange={(e) => setTakeDate(e.target.value)} />
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={3} className="d-flex align-items-end">
+                                        <Button onClick={handleLoadClass} className="w-100 fw-bold" variant="primary" disabled={takeLoading}>
+                                            {takeLoading ? <Spinner size="sm" /> : 'Load Batch'}
+                                        </Button>
+                                    </Col>
                                 </Row>
                             </Form>
                        </Card.Body>
                    </Card>
-                   {takeLoading && <div className="text-center mb-4"><Spinner animation="border" /></div>}
+
+                   {takeError && <Alert variant="warning">{takeError}</Alert>}
+
                    {!takeLoading && studentsForClass.length > 0 && (
-                       <ListGroup className="mb-4">
-                           {studentsForClass.map(student => {
-                               const status = attendanceStatus[student._id];
-                               return (
-                                   <ListGroup.Item key={student._id} className="d-flex justify-content-between align-items-center">
-                                       {/* --- MODIFIED LINE --- */}
-                                       <h5>{student.name} ({student.studentId || 'No ID'})</h5>
-                                       {/* --- END MODIFICATION --- */}
-                                       <div>
-                                           <Button variant={status === 'Present' ? 'success' : 'outline-success'} onClick={() => handleMarkAttendance(student._id, 'Present')} className="me-2">Present</Button>
-                                           <Button variant={status === 'Absent' ? 'danger' : 'outline-danger'} onClick={() => handleMarkAttendance(student._id, 'Absent')}>Absent</Button>
-                                       </div>
-                                   </ListGroup.Item>
-                               );
-                           })}
-                       </ListGroup>
-                   )}
-                   {!takeLoading && !locationLoading && studentsForClass.length === 0 && (
-                       <Alert variant="info" className="mb-4">Select filters and click "Load Class" to mark attendance, or add students on the Students page.</Alert>
+                       <Card className="shadow-sm border-0">
+                           <ListGroup variant="flush">
+                               {studentsForClass.map(student => {
+                                   const status = attendanceStatus[student._id];
+                                   return (
+                                       <ListGroup.Item key={student._id} className="d-flex justify-content-between align-items-center py-3 px-4">
+                                           <div>
+                                               <div className="fw-bold">{student.name}</div>
+                                               <small className="text-muted">ID: {student.studentId}</small>
+                                           </div>
+                                           <div className="btn-group">
+                                               <Button variant={status === 'Present' ? 'success' : 'outline-success'} size="sm" onClick={() => handleMarkAttendance(student._id, 'Present')}>Present</Button>
+                                               <Button variant={status === 'Absent' ? 'danger' : 'outline-danger'} size="sm" onClick={() => handleMarkAttendance(student._id, 'Absent')}>Absent</Button>
+                                           </div>
+                                       </ListGroup.Item>
+                                   );
+                               })}
+                           </ListGroup>
+                       </Card>
                    )}
                 </Tab>
 
-                {/* --- TAB 2: Student Report --- */}
-                <Tab eventKey="studentReport" title="Student Report">
-                     <Card>
-                        <Card.Header><Card.Title as="h3" className="mb-0">View Student Attendance</Card.Title></Card.Header>
-                        <Card.Body>
-                            {locationError && <Alert variant="danger">{locationError}</Alert>}
-                            {reportError && <Alert variant="danger">{reportError}</Alert>}
-
-                            {/* Student Filters */}
-                            <Form className="mb-3 border p-3 rounded bg-light">
-                                <Row className="mb-2 align-items-end">
-                                    <Col md={3} sm={6}> <Form.Group> <Form.Label>Grade</Form.Label> <Form.Select size="sm" value={reportGradeFilter} onChange={handleReportFilterChange(setReportGradeFilter)}> <option value="All">All Grades</option> <option value="Grade 6">Grade 6</option> <option value="Grade 7">Grade 7</option> <option value="Grade 8">Grade 8</option> <option value="Grade 9">Grade 9</option> <option value="Grade 10">Grade 10</option> <option value="Grade 11">Grade 11</option> </Form.Select> </Form.Group> </Col>
-                                    <Col md={3} sm={6}> <Form.Group> <Form.Label>Location</Form.Label> <Form.Select size="sm" value={reportLocationFilter} onChange={handleReportFilterChange(setReportLocationFilter)} disabled={locationLoading}> <option value="All">All Locations</option> {locationLoading ? (<option disabled>Loading...</option>) : ( locations.map(loc => (<option key={loc._id} value={loc.name}>{loc.name}</option>)) )} </Form.Select> </Form.Group> </Col>
-                                    <Col md={4} sm={8}> <Form.Group> <Form.Label>Name Contains</Form.Label> <Form.Control size="sm" type="text" placeholder="Filter by name..." value={reportNameFilter} onChange={handleReportFilterChange(setReportNameFilter)} /></Form.Group> </Col>
-                                    <Col md={2} sm={4}> <Button size="sm" onClick={handleFilterStudentsForReport} className="w-100" disabled={studentsLoading || locationLoading}>Filter Students</Button> </Col>
+                <Tab eventKey="studentReport" title="Attendance History">
+                     <Card className="shadow-sm border-0">
+                        <Card.Body className="p-4">
+                            <Form className="mb-4 p-3 bg-light rounded border">
+                                <Row className="g-2 align-items-end">
+                                    <Col md={2}><Form.Group><Form.Label className="small fw-bold">Grade</Form.Label><Form.Select size="sm" value={reportGradeFilter} onChange={handleReportFilterChange(setReportGradeFilter)}><option value="All">All</option><option value="Grade 6">Grade 6</option><option value="Grade 11">Grade 11</option></Form.Select></Form.Group></Col>
+                                    <Col md={3}><Form.Group><Form.Label className="small fw-bold">Location</Form.Label><Form.Select size="sm" value={reportLocationFilter} onChange={handleReportFilterChange(setReportLocationFilter)} disabled={locationLoading}>{locations.map(loc => (<option key={loc._id} value={loc.name}>{loc.name}</option>))}</Form.Select></Form.Group></Col>
+                                    <Col md={4}><Form.Group><Form.Label className="small fw-bold">Search Name</Form.Label><Form.Control size="sm" type="text" placeholder="Student name..." value={reportNameFilter} onChange={handleReportFilterChange(setReportNameFilter)} /></Form.Group></Col>
+                                    <Col md={3}><Button size="sm" variant="dark" onClick={handleFilterStudentsForReport} className="w-100">Filter Students</Button></Col>
                                 </Row>
                             </Form>
-                            <hr />
 
-                            {/* Student Selection & Date Range */}
-                            <Row className="mb-3 align-items-center">
+                            <Row className="g-3 mb-4">
                                 <Col md={6}>
-                                    <Form.Group controlId="studentSelect">
-                                        <Form.Label>Select Student:</Form.Label>
-                                        <Form.Select
-                                            value={selectedStudentId}
-                                            onChange={(e) => setSelectedStudentId(e.target.value)}
-                                            disabled={studentsLoading || locationLoading || filteredStudentsForReport.length === 0}
-                                            isValid={filterApplied && filteredStudentsForReport.length > 0}
-                                            isInvalid={filterApplied && filteredStudentsForReport.length === 0}
-                                        >
-                                            <option value="">-- Select from filtered list --</option>
-                                            {filteredStudentsForReport.length > 0 && <option disabled>({filteredStudentsForReport.length} found)</option>}
-                                            {filteredStudentsForReport.map(student => (
-                                                 <option key={student._id} value={student._id}>
-                                                     {/* --- MODIFIED LINE --- */}
-                                                     {student.name} ({student.studentId || 'No ID'})
-                                                     {/* --- END MODIFICATION --- */}
-                                                 </option>
-                                             ))}
-                                        </Form.Select>
-                                        <Form.Control.Feedback type="valid">Student(s) found.</Form.Control.Feedback>
-                                        <Form.Control.Feedback type="invalid">No students match filters.</Form.Control.Feedback>
-                                    </Form.Group>
+                                    <Form.Label className="small fw-bold">Choose Student</Form.Label>
+                                    <Form.Select 
+                                        value={selectedStudentId} 
+                                        onChange={(e) => setSelectedStudentId(e.target.value)}
+                                        disabled={!filterApplied || filteredStudentsForReport.length === 0}
+                                    >
+                                        <option value="">-- Select Student --</option>
+                                        {filteredStudentsForReport.map(s => <option key={s._id} value={s._id}>{s.name} ({s.studentId})</option>)}
+                                    </Form.Select>
                                 </Col>
-                                <Col md={3}> <Form.Group> <Form.Label>From Date</Form.Label> <Form.Control type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} max={reportEndDate || undefined} disabled={!selectedStudentId}/> </Form.Group> </Col>
-                                <Col md={3}> <Form.Group> <Form.Label>To Date</Form.Label> <Form.Control type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} min={reportStartDate || undefined} disabled={!selectedStudentId}/> </Form.Group> </Col>
+                                <Col md={3}>
+                                    <Form.Label className="small fw-bold">Start Date</Form.Label>
+                                    <Form.Control type="date" size="sm" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} disabled={!selectedStudentId}/>
+                                </Col>
+                                <Col md={3}>
+                                    <Form.Label className="small fw-bold">End Date</Form.Label>
+                                    <Form.Control type="date" size="sm" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} disabled={!selectedStudentId}/>
+                                </Col>
                             </Row>
 
-                            {/* Attendance Table */}
-                            {reportLoading && <div className="text-center"><Spinner animation="border"/></div>}
-                            {!reportLoading && selectedStudentId && ( <Table striped bordered hover responsive size="sm" className="mt-3"> <thead><tr><th>Date</th><th>Status</th><th>Class Grade</th><th>Location</th></tr></thead> <tbody> {studentRecords.length > 0 ? ( studentRecords.map(rec => ( <tr key={rec._id}> <td>{formatDate(rec.date)}</td> <td><Badge bg={rec.status === 'Present' ? 'success' : 'danger'}>{rec.status}</Badge></td> <td>{rec.classGrade || '-'}</td> <td>{rec.location || '-'}</td> </tr> )) ) : ( <tr><td colSpan="4" className="text-center">No records found for this student/date range.</td></tr> )} </tbody> </Table> )}
-                            {/* Info messages */}
-                            {!reportLoading && !selectedStudentId && filterApplied && filteredStudentsForReport.length > 0 && ( <Alert variant="info" className="mt-3">Select a student from the dropdown to view their report.</Alert> )}
-                            {!reportLoading && !selectedStudentId && filterApplied && filteredStudentsForReport.length === 0 && ( <Alert variant="danger" className="mt-3">No students found matching the selected filters.</Alert> )}
-                            {!reportLoading && !selectedStudentId && !filterApplied && ( <Alert variant="secondary" className="mt-3">Use filters and click "Filter Students".</Alert> )}
+                            {reportLoading ? <div className="text-center py-4"><Spinner animation="border" variant="primary"/></div> : (
+                                selectedStudentId && (
+                                    <Table striped borderless hover responsive className="mt-3">
+                                        <thead className="table-light"><tr><th>Date</th><th>Status</th><th>Grade</th><th>Venue</th></tr></thead>
+                                        <tbody>
+                                            {studentRecords.length > 0 ? studentRecords.map(rec => (
+                                                <tr key={rec._id}>
+                                                    <td>{formatDate(rec.date)}</td>
+                                                    <td><Badge bg={rec.status === 'Present' ? 'success' : 'danger'}>{rec.status}</Badge></td>
+                                                    <td>{rec.classGrade}</td>
+                                                    <td>{rec.location}</td>
+                                                </tr>
+                                            )) : <tr><td colSpan="4" className="text-center text-muted py-4">No records found.</td></tr>}
+                                        </tbody>
+                                    </Table>
+                                )
+                            )}
                         </Card.Body>
                     </Card>
                 </Tab>
-
             </Tabs>
         </Container>
     );

@@ -1,122 +1,154 @@
 const router = require('express').Router();
 const Student = require('../models/Student');
+const auth = require('../middleware/auth'); // Import the security guard
 
 // --- Helper function to generate a random 4-digit ID (1000-9999) ---
 function generateStudentId() {
     return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
-// --- CREATE a new student (MODIFIED) ---
+// --- CREATE a new student ---
 // POST /api/students
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
     try {
         let uniqueIdFound = false;
         let generatedId;
-        let attempts = 0; // Prevent infinite loops in unlikely scenarios
+        let attempts = 0; 
 
-        // --- Loop to find a unique ID ---
-        while (!uniqueIdFound && attempts < 100) { // Limit attempts
+        // --- Loop to find a unique ID WITHIN this teacher's scope ---
+        while (!uniqueIdFound && attempts < 100) {
             generatedId = generateStudentId();
-            const existingStudent = await Student.findOne({ studentId: generatedId });
+            // We search for the ID AND the teacherId
+            const existingStudent = await Student.findOne({ 
+                studentId: generatedId, 
+                teacherId: req.teacherId 
+            });
             if (!existingStudent) {
-                uniqueIdFound = true; // Found a unique ID
+                uniqueIdFound = true;
             }
             attempts++;
         }
 
         if (!uniqueIdFound) {
-            // Highly unlikely, but handle the case where we couldn't find a unique ID after many tries
             return res.status(500).json({ message: "Could not generate a unique student ID. Please try again." });
         }
-        // --- End ID Generation ---
 
         const newStudent = new Student({
-            studentId: generatedId, // Assign the unique ID
+            teacherId: req.teacherId, // Automatically tag with logged-in teacher
+            studentId: generatedId,
             name: req.body.name,
             grade: req.body.grade,
             location: req.body.location,
             contactPhone: req.body.contactPhone,
             parentName: req.body.parentName
-            // isActive defaults to true
         });
 
         const savedStudent = await newStudent.save();
         res.status(201).json(savedStudent);
 
     } catch (err) {
-         // Handle potential errors like validation or duplicate *name* if you add that later
-         if (err.code === 11000) { // Catch potential duplicate key error just in case (race condition)
-             return res.status(400).json({ message: "Failed to generate unique ID or duplicate entry error." });
+         if (err.code === 11000) {
+             return res.status(400).json({ message: "Duplicate entry error for this ID." });
          }
         res.status(400).json({ message: "Error creating student: " + err.message });
     }
 });
 
-// --- GET all students ---
+// --- GET all students (FILTERED BY TEACHER) ---
 // GET /api/students
-router.get('/', async (req, res) => {
-    // ... (This route remains the same - ensures isActive: true) ...
-    try { const filter = { isActive: true }; if (req.query.grade && req.query.grade !== 'All') { filter.grade = req.query.grade; } if (req.query.location && req.query.location !== 'All') { filter.location = req.query.location; } const students = await Student.find(filter).sort({ name: 1 }); res.json(students); } catch (err) { console.error("Error fetching students:", err); res.status(500).json({ message: 'Error fetching students: ' + err.message }); }
+router.get('/', auth, async (req, res) => {
+    try { 
+        // We ALWAYS include teacherId in the filter for security
+        const filter = { isActive: true, teacherId: req.teacherId }; 
+
+        if (req.query.grade && req.query.grade !== 'All') { 
+            filter.grade = req.query.grade; 
+        } 
+        if (req.query.location && req.query.location !== 'All') { 
+            filter.location = req.query.location; 
+        } 
+        
+        const students = await Student.find(filter).sort({ name: 1 }); 
+        res.json(students); 
+    } catch (err) { 
+        console.error("Error fetching students:", err); 
+        res.status(500).json({ message: 'Error fetching students: ' + err.message }); 
+    }
 });
 
 // --- GET one specific student ---
-// GET /api/students/:id (using MongoDB _id)
-router.get('/:id', async (req, res) => {
-    // ... (This route remains the same) ...
-     try { const student = await Student.findById(req.params.id); if (student == null) { return res.status(404).json({ message: 'Cannot find student' }); } res.json(student); } catch (err) { res.status(500).json({ message: err.message }); }
+router.get('/:id', auth, async (req, res) => {
+     try { 
+         // Find by ID AND verify it belongs to this teacher
+         const student = await Student.findOne({ _id: req.params.id, teacherId: req.teacherId }); 
+         if (student == null) { 
+             return res.status(404).json({ message: 'Cannot find student or unauthorized' }); 
+         } 
+         res.json(student); 
+     } catch (err) { 
+         res.status(500).json({ message: err.message }); 
+     }
 });
 
 // --- UPDATE a student ---
-// PATCH /api/students/:id (using MongoDB _id)
-router.patch('/:id', async (req, res) => {
-    // Note: We don't allow changing the studentId here
-    const { studentId, ...updateData } = req.body; // Exclude studentId from updates
+router.patch('/:id', auth, async (req, res) => {
+    const { studentId, teacherId, ...updateData } = req.body; // Protect critical fields
 
     try {
-        const updatedStudent = await Student.findByIdAndUpdate(
-            req.params.id,
-            updateData, // Use the data without studentId
+        const updatedStudent = await Student.findOneAndUpdate(
+            { _id: req.params.id, teacherId: req.teacherId }, // Ensure ownership
+            updateData, 
             { new: true, runValidators: true }
         );
-        if (updatedStudent == null) { return res.status(404).json({ message: 'Cannot find student' }); }
+        if (updatedStudent == null) { 
+            return res.status(404).json({ message: 'Cannot find student or unauthorized' }); 
+        }
         res.json(updatedStudent);
     } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-// --- RESET (Deactivate ALL) students ---
-// DELETE /api/students/reset
-router.delete('/reset', async (req, res) => {
-    // ... (This route remains the same) ...
-    try { const updateResult = await Student.updateMany({}, { $set: { isActive: false } }); console.log("Resetting (Deactivating) Students:", updateResult); res.json({ message: `Successfully deactivated all students. Updated ${updateResult.modifiedCount} student records.`, modifiedCount: updateResult.modifiedCount }); } catch (err) { console.error("Error deactivating all students:", err); res.status(500).json({ message: 'Error deactivating all students: ' + err.message }); }
+// --- RESET (Deactivate ALL) students for THIS teacher ---
+router.delete('/reset', auth, async (req, res) => {
+    try { 
+        const updateResult = await Student.updateMany(
+            { teacherId: req.teacherId }, 
+            { $set: { isActive: false } }
+        ); 
+        res.json({ message: `Deactivated your students. Updated ${updateResult.modifiedCount} records.`, modifiedCount: updateResult.modifiedCount }); 
+    } catch (err) { 
+        res.status(500).json({ message: 'Error: ' + err.message }); 
+    }
 });
 
 // --- DELETE (Deactivate ONE) student ---
-// DELETE /api/students/:id (using MongoDB _id)
-router.delete('/:id', async (req, res) => {
-    // ... (This route remains the same) ...
-    try { const student = await Student.findById(req.params.id); if (student == null) { return res.status(404).json({ message: 'Cannot find student' }); } student.isActive = false; await student.save(); res.json({ message: 'Deactivated Student' }); } catch (err) { res.status(500).json({ message: err.message }); }
+router.delete('/:id', auth, async (req, res) => {
+    try { 
+        const student = await Student.findOne({ _id: req.params.id, teacherId: req.teacherId }); 
+        if (student == null) { 
+            return res.status(404).json({ message: 'Cannot find student or unauthorized' }); 
+        } 
+        student.isActive = false; 
+        await student.save(); 
+        res.json({ message: 'Deactivated Student' }); 
+    } catch (err) { 
+        res.status(500).json({ message: err.message }); 
+    }
 });
 
-
-// --- NEW: GET student by their 4-digit studentId ---
-// GET /api/students/by-id/1234
-router.get('/by-id/:studentId', async (req, res) => {
+// --- GET student by their 4-digit studentId (QR SCANNER) ---
+router.get('/by-id/:studentId', auth, async (req, res) => {
     try {
-        console.log(`API: Searching for studentId: ${req.params.studentId}`);
         const student = await Student.findOne({ 
             studentId: req.params.studentId, 
-            isActive: true // Only find active students
+            teacherId: req.teacherId, // Ensure teacher only scans their own students
+            isActive: true 
         });
 
         if (student == null) {
-            console.log("API: Student not found.");
             return res.status(404).json({ message: 'Cannot find active student with this ID' });
         }
-
-        console.log("API: Student found:", student.name);
-        res.json(student); // Send back the full student object
+        res.json(student); 
     } catch (err) {
-        console.error("API Error:", err.message);
         res.status(500).json({ message: err.message });
     }
 });

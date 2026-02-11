@@ -1,102 +1,107 @@
-import React, { useState, useEffect } from 'react'; // Added useEffect
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Container, Row, Col, Form, Button, Card, Table, Spinner, Alert, Badge } from 'react-bootstrap';
+import { useAuth } from '../context/AuthContext'; // Import the Auth hook
+import { FaFileInvoiceDollar, FaChartLine, FaFilter } from 'react-icons/fa';
 
-// Helper arrays (unchanged)
 const months = ["All", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const years = ["All", new Date().getFullYear(), new Date().getFullYear() - 1];
+const currentYear = new Date().getFullYear();
+const years = ["All", currentYear, currentYear - 1, currentYear - 2];
 
 function FinanceReportPage() {
-    // --- State for Filters (unchanged) ---
+    const { teacher } = useAuth(); // Access global teacher identity
+    
+    // --- State for Filters ---
     const [month, setMonth] = useState('All');
-    const [year, setYear] = useState(new Date().getFullYear());
+    const [year, setYear] = useState(currentYear);
     const [grade, setGrade] = useState('All');
     const [location, setLocation] = useState('All');
 
-    // --- State for Data (unchanged) ---
+    // --- State for Data ---
     const [reportData, setReportData] = useState(null);
-    const [loading, setLoading] = useState(false); // Loading for report data
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    // --- State for Locations ---
     const [locations, setLocations] = useState([]);
     const [locationLoading, setLocationLoading] = useState(true);
 
-    // --- Fetch locations when component loads (Uses Environment Variable) ---
+    const apiUrl = process.env.REACT_APP_API_URL;
+
+    // --- Initial Secure Data Fetch ---
     useEffect(() => {
         const fetchLocations = async () => {
             setLocationLoading(true);
-            setError(''); // Clear previous errors
+            setError(''); 
             try {
-                const apiUrl = process.env.REACT_APP_API_URL;
-                if (!apiUrl) {
-                    throw new Error("API URL is not configured.");
-                }
-                const res = await axios.get(`${apiUrl}/api/locations`); // Use apiUrl
+                if (!apiUrl) throw new Error("API URL is not configured.");
+                // Token is handled by the axios interceptor
+                const res = await axios.get(`${apiUrl}/api/locations`); 
                 setLocations(res.data);
             } catch (err) {
                 console.error("Failed to fetch locations:", err);
-                setError(`Failed to load locations list: ${err.message}`); // Set specific error
+                setError(`Configuration Error: ${err.response?.data?.message || err.message}`); 
             } finally {
                 setLocationLoading(false);
             }
         };
-        fetchLocations();
-    }, []); // Runs once on mount
 
-    // --- Load the Report from API (Uses Environment Variable) ---
+        if (teacher) fetchLocations();
+    }, [teacher, apiUrl]);
+
+    // --- Load Secure Report ---
     const loadFinanceReport = async () => {
         setLoading(true);
-        setError(''); // Clear previous report errors
+        setError('');
         setReportData(null);
         try {
-            const apiUrl = process.env.REACT_APP_API_URL;
-             if (!apiUrl) {
-                throw new Error("API URL is not configured.");
-            }
-            const response = await axios.get(`${apiUrl}/api/reports/finance`, { // Use apiUrl
+            if (!apiUrl) throw new Error("API URL is not configured.");
+            
+            // This GET request is secured by the teacher's JWT token
+            const response = await axios.get(`${apiUrl}/api/reports/finance`, {
                 params: { month, year, grade, location }
             });
             setReportData(response.data);
         } catch (err) {
             console.error("Error loading finance report:", err);
-            setError(`Error loading finance report: ${err.response?.data?.message || err.message}`);
+            setError(`Report Error: ${err.response?.data?.message || err.message}`);
         } finally {
             setLoading(false);
         }
     };
 
-    // --- Render JSX ---
     return (
-        <Container fluid className="mt-4">
-            <Card className="mb-4">
-                <Card.Body>
-                    <Card.Title>Finance Report</Card.Title>
-                    {error && <Alert variant="danger">{error}</Alert>}
+        <Container fluid className="mt-4 px-4 pb-5">
+            <div className="mb-4 d-flex align-items-center justify-content-between">
+                <div>
+                    <h2 className="fw-bold"><FaFileInvoiceDollar className="me-2 text-primary" /> Finance & Revenue</h2>
+                    <p className="text-muted mb-0">Analytics for <strong>{teacher?.instituteName}</strong></p>
+                </div>
+            </div>
+
+            <Card className="shadow-sm border-0 mb-4">
+                <Card.Body className="p-4">
+                    <h5 className="mb-3 fw-bold text-secondary"><FaFilter className="me-2" /> Report Filters</h5>
                     <Form>
-                        <Row>
-                            {/* --- Month Filter --- */}
-                            <Col md={3}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Month</Form.Label>
+                        <Row className="g-3">
+                            <Col md={3} lg={2}>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Month</Form.Label>
                                     <Form.Select value={month} onChange={(e) => setMonth(e.target.value)}>
                                         {months.map(m => <option key={m} value={m}>{m}</option>)}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Year Filter --- */}
-                            <Col md={3}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Year</Form.Label>
+                            <Col md={2} lg={2}>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Year</Form.Label>
                                     <Form.Select value={year} onChange={(e) => setYear(e.target.value)}>
                                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Grade Filter --- */}
-                            <Col md={2}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Grade</Form.Label>
+                            <Col md={3} lg={2}>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Grade</Form.Label>
                                     <Form.Select value={grade} onChange={(e) => setGrade(e.target.value)}>
                                         <option value="All">All Grades</option>
                                         <option value="Grade 6">Grade 6</option>
@@ -108,30 +113,24 @@ function FinanceReportPage() {
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Location Filter (Dynamic) --- */}
-                            <Col md={2}>
-                                <Form.Group className="mb-3">
-                                    <Form.Label>Location</Form.Label>
+                            <Col md={2} lg={3}>
+                                <Form.Group>
+                                    <Form.Label className="small fw-bold">Location</Form.Label>
                                     <Form.Select
                                         value={location}
                                         onChange={(e) => setLocation(e.target.value)}
                                         disabled={locationLoading}
                                     >
                                         <option value="All">All Locations</option>
-                                        {locationLoading ? (
-                                            <option disabled>Loading...</option>
-                                        ) : (
-                                            locations.map(loc => (
-                                                <option key={loc._id} value={loc.name}>{loc.name}</option>
-                                            ))
-                                        )}
+                                        {locations.map(loc => (
+                                            <option key={loc._id} value={loc.name}>{loc.name}</option>
+                                        ))}
                                     </Form.Select>
                                 </Form.Group>
                             </Col>
-                            {/* --- Load Button --- */}
-                            <Col md={2} className="d-flex align-items-end mb-3">
-                                <Button onClick={loadFinanceReport} className="w-100" disabled={loading || locationLoading}>
-                                    {loading ? <Spinner as="span" size="sm" /> : 'Load Report'}
+                            <Col md={2} lg={3} className="d-flex align-items-end">
+                                <Button onClick={loadFinanceReport} variant="primary" className="w-100 fw-bold shadow-sm" disabled={loading || locationLoading}>
+                                    {loading ? <Spinner as="span" size="sm" /> : <><FaChartLine className="me-2" /> Generate Report</>}
                                 </Button>
                             </Col>
                         </Row>
@@ -139,78 +138,82 @@ function FinanceReportPage() {
                 </Card.Body>
             </Card>
 
-            {/* --- Report Data Display --- */}
-            {loading && <div className="text-center"><Spinner animation="border" /></div>}
+            {error && <Alert variant="danger" className="shadow-sm">{error}</Alert>}
 
             {reportData && (
                 <>
-                    {/* Grand Totals */}
-                    <Row className="mb-3">
+                    <Row className="mb-4 g-3">
                         <Col md={6}>
-                            <Card className="text-center">
-                                <Card.Header>Total Income (LKR)</Card.Header>
-                                <Card.Body>
-                                    <Card.Title>
-                                        {/* Optional chaining ?. for safety */}
-                                        {reportData.grandTotal?.totalIncome?.toLocaleString() || '0'}
-                                    </Card.Title>
+                            <Card className="text-center shadow-sm border-0 bg-primary text-white">
+                                <Card.Body className="p-4">
+                                    <h6 className="text-uppercase small opacity-75">Net Revenue Collected</h6>
+                                    <h2 className="display-6 fw-bold mb-0">
+                                        LKR {reportData.grandTotal?.totalIncome?.toLocaleString() || '0'}
+                                    </h2>
                                 </Card.Body>
                             </Card>
                         </Col>
                         <Col md={6}>
-                            <Card className="text-center">
-                                <Card.Header>Total Payments Received</Card.Header>
-                                <Card.Body>
-                                    <Card.Title>
+                            <Card className="text-center shadow-sm border-0 bg-dark text-white">
+                                <Card.Body className="p-4">
+                                    <h6 className="text-uppercase small opacity-75">Successful Transactions</h6>
+                                    <h2 className="display-6 fw-bold mb-0">
                                         {reportData.grandTotal?.totalStudentsPaid || '0'}
-                                    </Card.Title>
+                                    </h2>
                                 </Card.Body>
                             </Card>
                         </Col>
                     </Row>
 
-                    {/* Breakdown Table */}
-                    <Card>
-                        <Card.Header>Income Breakdown</Card.Header>
-                        <Card.Body>
-                            <Table striped bordered hover responsive>
-                                <thead>
-                                    <tr>
-                                        <th>Year</th>
-                                        <th>Month</th>
-                                        <th>Grade</th>
-                                        <th>Location</th>
-                                        <th>Students Paid</th>
-                                        <th>Total Income (LKR)</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {/* Check if breakdown exists and has length */}
-                                    {reportData.breakdown && reportData.breakdown.length > 0 ? (
-                                        reportData.breakdown.map((item, index) => (
-                                            <tr key={index}>
-                                                <td>{item._id.year}</td>
-                                                <td>{item._id.month}</td>
-                                                <td><Badge bg="primary">{item._id.grade}</Badge></td>
-                                                <td><Badge bg="secondary">{item._id.location}</Badge></td>
-                                                <td>{item.studentsPaid}</td>
-                                                <td>{item.totalIncome != null ? item.totalIncome.toLocaleString() : 'N/A'}</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="6" className="text-center">No data found for these filters.</td>
+                    <Card className="shadow-sm border-0 rounded overflow-hidden">
+                        <Card.Header className="bg-white py-3 border-0">
+                            <h5 className="mb-0 fw-bold">Revenue Breakdown</h5>
+                        </Card.Header>
+                        <Table hover responsive className="mb-0 border-top">
+                            <thead className="table-light">
+                                <tr>
+                                    <th>Period</th>
+                                    <th>Class Details</th>
+                                    <th>Venue</th>
+                                    <th className="text-center">Count</th>
+                                    <th className="text-end pe-4">Income (LKR)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reportData.breakdown && reportData.breakdown.length > 0 ? (
+                                    reportData.breakdown.map((item, index) => (
+                                        <tr key={index}>
+                                            <td className="align-middle">
+                                                <div className="fw-bold">{item._id.month}</div>
+                                                <small className="text-muted">{item._id.year}</small>
+                                            </td>
+                                            <td className="align-middle">
+                                                <Badge bg="primary">{item._id.grade}</Badge>
+                                            </td>
+                                            <td className="align-middle">
+                                                <Badge bg="secondary" pill>{item._id.location}</Badge>
+                                            </td>
+                                            <td className="align-middle text-center">{item.studentsPaid}</td>
+                                            <td className="align-middle text-end pe-4 fw-bold">
+                                                {item.totalIncome != null ? item.totalIncome.toLocaleString() : '0'}
+                                            </td>
                                         </tr>
-                                    )}
-                                </tbody>
-                            </Table>
-                        </Card.Body>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="5" className="text-center py-5 text-muted italic">No financial data found for the selected period.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </Table>
                     </Card>
                 </>
             )}
-            {/* Show message only if not loading AND no reportData exists yet */}
-            {!loading && !reportData && (
-                 <Alert variant="info">Select filters and click "Load Report" to view data.</Alert>
+
+            {!loading && !reportData && !error && (
+                <div className="text-center py-5 border rounded bg-white shadow-sm mt-4">
+                    <p className="mb-0 text-muted fs-5">Configure your report filters and click <strong>Generate Report</strong>.</p>
+                </div>
             )}
         </Container>
     );

@@ -1,12 +1,21 @@
-import React, { useState } from 'react'; // 1. Import useState
-// --- ADD Button TO THE IMPORT ---
-import { Navbar, Nav, Container, Button } from 'react-bootstrap';
-import { Link } from 'react-router-dom'; // We use Link for navigation
-import { FaQrcode } from 'react-icons/fa';
+import React, { useState } from 'react';
+import { Navbar, Nav, Container, Button, NavDropdown } from 'react-bootstrap';
+import { Link, useNavigate } from 'react-router-dom'; 
+import { FaQrcode, FaUserCircle, FaSignOutAlt, FaUserPlus, FaMapMarkerAlt } from 'react-icons/fa';
+import { useAuth } from '../context/AuthContext'; 
 
 function NavigationBar() {
-  // 2. Create a state variable to track if the menu is expanded
   const [expanded, setExpanded] = useState(false);
+  const { teacher, logout } = useAuth(); 
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    setExpanded(false);
+    logout();
+    navigate('/login');
+  };
+
+  const closeMenu = () => setExpanded(false);
 
   return (
     <Navbar 
@@ -14,44 +23,68 @@ function NavigationBar() {
       variant="dark" 
       expand="lg" 
       sticky="top"
-      expanded={expanded} // 3. Control the Navbar's expanded state with our variable
+      expanded={expanded}
+      className="shadow-sm"
     >
       <Container>
-        {/* 4. Add onClick to the brand to close the menu */}
-        <Navbar.Brand as={Link} to="/" onClick={() => setExpanded(false)}>
-          TMS
+        <Navbar.Brand as={Link} to="/" onClick={closeMenu} className="fw-bold">
+          TMS {teacher && <small className="text-muted ms-2 fw-normal">| {teacher.instituteName}</small>}
         </Navbar.Brand>
         
-        {/* 5. Make the toggle update our state variable */}
         <Navbar.Toggle 
           aria-controls="basic-navbar-nav" 
-          onClick={() => setExpanded(expanded ? false : true)} // Toggles the state
-          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)} 
         />
         
         <Navbar.Collapse id="basic-navbar-nav">
-          
-          {/* Main navigation links on the left */}
-          <Nav className="me-auto">
-            {/* 6. Add onClick={() => setExpanded(false)} to EVERY link */}
-            <Nav.Link as={Link} to="/" onClick={() => setExpanded(false)}>Dashboard</Nav.Link>
-            <Nav.Link as={Link} to="/students" onClick={() => setExpanded(false)}>Students</Nav.Link>
-            <Nav.Link as={Link} to="/payments" onClick={() => setExpanded(false)}>Payments</Nav.Link>
-            <Nav.Link as={Link} to="/attendance" onClick={() => setExpanded(false)}>Attendance</Nav.Link>
-            <Nav.Link as={Link} to="/finance-report" onClick={() => setExpanded(false)}>Finance Report</Nav.Link>
-            <Nav.Link as={Link} to="/settings" onClick={() => setExpanded(false)}>Settings</Nav.Link>
-          </Nav>
+          {teacher ? (
+            <>
+              <Nav className="me-auto">
+                <Nav.Link as={Link} to="/" onClick={closeMenu}>Dashboard</Nav.Link>
+                <Nav.Link as={Link} to="/students" onClick={closeMenu}>Students</Nav.Link>
+                <Nav.Link as={Link} to="/payments" onClick={closeMenu}>Payments</Nav.Link>
+                <Nav.Link as={Link} to="/attendance" onClick={closeMenu}>Attendance</Nav.Link>
+                <Nav.Link as={Link} to="/finance-report" onClick={closeMenu}>Finance Report</Nav.Link>
+                <Nav.Link as={Link} to="/settings" onClick={closeMenu}>Settings</Nav.Link>
+              </Nav>
 
-          {/* This separate Nav component pushes itself to the far right */}
-          <Nav className="ms-auto">
-            {/* 6. Also add onClick to this link */}
-            <Nav.Link as={Link} to="/scan" onClick={() => setExpanded(false)}>
-              <Button variant="success">
-                <FaQrcode className="me-2" /> Scan & Check-in
-              </Button>
-            </Nav.Link>
-          </Nav>
+              <Nav className="ms-auto align-items-center">
+                <Nav.Link as={Link} to="/scan" onClick={closeMenu} className="me-lg-3">
+                  <Button variant="success" className="fw-bold">
+                    <FaQrcode className="me-2" /> Scan & Check-in
+                  </Button>
+                </Nav.Link>
 
+                {/* UPDATED: Dropdown title uses firstName */}
+                <NavDropdown 
+                  title={<span><FaUserCircle className="me-1" /> {teacher.firstName}</span>} 
+                  id="collasible-nav-dropdown"
+                  align="end"
+                >
+                  <div className="px-3 py-2 border-bottom bg-light">
+                    <div className="fw-bold small">{teacher.firstName} {teacher.lastName}</div>
+                    <div className="text-muted small" style={{ fontSize: '0.75rem' }}>
+                      <FaMapMarkerAlt className="me-1" /> {teacher.location}
+                    </div>
+                  </div>
+                  <NavDropdown.Item onClick={handleLogout} className="text-danger mt-1">
+                    <FaSignOutAlt className="me-2" /> Logout
+                  </NavDropdown.Item>
+                </NavDropdown>
+              </Nav>
+            </>
+          ) : (
+            <Nav className="ms-auto align-items-center">
+              <Nav.Link as={Link} to="/login" onClick={closeMenu} className="me-lg-3">
+                Login
+              </Nav.Link>
+              <Nav.Link as={Link} to="/register" onClick={closeMenu}>
+                <Button variant="outline-light" size="sm" className="fw-bold px-3">
+                  <FaUserPlus className="me-2" /> Get Started
+                </Button>
+              </Nav.Link>
+            </Nav>
+          )}
         </Navbar.Collapse>
       </Container>
     </Navbar>

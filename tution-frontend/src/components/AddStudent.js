@@ -1,120 +1,104 @@
-import React, { useState, useEffect } from 'react'; // Added useEffect
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Form, Button, Row, Col, Alert, Card } from 'react-bootstrap';
+import { Form, Button, Row, Col, Alert, Card, Spinner } from 'react-bootstrap';
+import { useAuth } from '../context/AuthContext';
 
 function AddStudent({ onStudentAdded }) {
+    const { teacher } = useAuth(); // Access global teacher state
+
     // --- Form Fields ---
     const [name, setName] = useState('');
     const [grade, setGrade] = useState('Grade 6');
-    const [location, setLocation] = useState(''); // Default is empty until locations load
+    const [location, setLocation] = useState('');
     const [contactPhone, setContactPhone] = useState('');
     const [parentName, setParentName] = useState('');
 
-    // --- State for Locations Dropdown ---
+    // --- Component State ---
     const [locations, setLocations] = useState([]);
+    const [loading, setLoading] = useState(false);
     const [locationLoading, setLocationLoading] = useState(true);
-
-    // --- State for messages/errors ---
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
 
-    // --- Fetch locations when component loads (Uses Environment Variable) ---
+    const apiUrl = process.env.REACT_APP_API_URL;
+
+    // --- Fetch teacher-specific locations on mount ---
     useEffect(() => {
         const fetchLocations = async () => {
-             setLocationLoading(true); // Start loading
-             setError(''); // Clear previous errors
+            setLocationLoading(true);
             try {
-                // Get API URL from environment
-                const apiUrl = process.env.REACT_APP_API_URL;
-                if (!apiUrl) {
-                    throw new Error("API URL is not configured. Check Vercel environment variables or local .env file.");
-                }
-
-                // Use apiUrl in the request
                 const res = await axios.get(`${apiUrl}/api/locations`);
                 setLocations(res.data);
-
-                // Set the default location state AFTER locations are loaded
+                
+                // Set default location if list isn't empty
                 if (res.data.length > 0) {
-                    setLocation(res.data[0].name); // Default to first location
-                } else {
-                    setLocation(''); // Set to empty if no locations exist
+                    setLocation(res.data[0].name);
                 }
-
             } catch (err) {
                 console.error("Failed to fetch locations:", err);
-                // Set a user-friendly error message
-                setError(`Failed to load locations list: ${err.message}`);
+                setError("Could not load your locations. Please check your settings.");
             } finally {
-                setLocationLoading(false); // Stop loading regardless of success/fail
+                setLocationLoading(false);
             }
         };
-        fetchLocations();
-        // We only want this to run once on mount, so the dependency array is empty.
-        // Location state is handled internally after fetch.
-    }, []); // Empty array means runs once on mount
 
-    // --- Handle Form Submit (Uses Environment Variable) ---
+        if (teacher) fetchLocations();
+    }, [teacher, apiUrl]);
+
+    // --- Submit Handler ---
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setMessage(''); // Clear previous messages
-        setError(''); // Clear previous errors
+        setMessage('');
+        setError('');
+        setLoading(true);
 
         if (!name || !grade || !location) {
+            setLoading(false);
             return setError('Name, Grade, and Location are required.');
         }
 
-        const newStudent = { name, grade, location, contactPhone, parentName };
+        const newStudentData = { name, grade, location, contactPhone, parentName };
 
         try {
-            // Get API URL from environment
-            const apiUrl = process.env.REACT_APP_API_URL;
-            if (!apiUrl) {
-                throw new Error("API URL is not configured.");
-            }
+            // Because of the AuthContext, this POST request includes the Teacher's Token
+            const response = await axios.post(`${apiUrl}/api/students`, newStudentData);
 
-            // Use apiUrl in the request
-            const response = await axios.post(`${apiUrl}/api/students`, newStudent);
+            setMessage(`Success! Student "${response.data.name}" added with ID: ${response.data.studentId}`);
 
-            setMessage(`Success! Student "${response.data.name}" (${response.data.studentId}) added.`); // Show ID on success
-
-            // Clear the form fields after successful submission
+            // Reset Form
             setName('');
             setGrade('Grade 6');
-            // Reset location to the first in the list, or empty if no locations
-            setLocation(locations.length > 0 ? locations[0].name : '');
             setContactPhone('');
             setParentName('');
+            if (locations.length > 0) setLocation(locations[0].name);
 
-            // Notify the parent component (if prop is provided)
-            if (onStudentAdded) {
-                onStudentAdded();
-            }
+            // Refresh the sibling list component
+            if (onStudentAdded) onStudentAdded();
 
         } catch (err) {
-             console.error("Error adding student:", err);
-             // Show backend validation error or generic error
-             setError(`Error adding student: ${err.response?.data?.message || err.message}`);
+            console.error("Error adding student:", err);
+            setError(`Failed to add student: ${err.response?.data?.message || err.message}`);
+        } finally {
+            setLoading(false);
         }
     };
 
-    // --- Render JSX ---
     return (
-        <Card className="mb-4">
-            <Card.Body>
-                <Card.Title>Add New Student</Card.Title>
+        <Card className="shadow-sm border-0">
+            <Card.Body className="p-4">
+                <Card.Title as="h4" className="mb-4">Enroll New Student</Card.Title>
 
-                {/* Show success or error messages */}
-                {message && <Alert variant="success">{message}</Alert>}
-                {error && <Alert variant="danger">{error}</Alert>}
+                {message && <Alert variant="success" dismissible onClose={() => setMessage('')}>{message}</Alert>}
+                {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
 
                 <Form onSubmit={handleSubmit}>
                     <Row>
                         <Col md={6}>
-                            <Form.Group className="mb-3" controlId="formStudentName">
-                                <Form.Label>Student Name</Form.Label>
+                            <Form.Group className="mb-3">
+                                <Form.Label className="fw-bold">Student Full Name</Form.Label>
                                 <Form.Control
                                     type="text"
+                                    placeholder="Enter student's name"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
                                     required
@@ -122,8 +106,8 @@ function AddStudent({ onStudentAdded }) {
                             </Form.Group>
                         </Col>
                         <Col md={6}>
-                            <Form.Group className="mb-3" controlId="formGrade">
-                                <Form.Label>Grade</Form.Label>
+                            <Form.Group className="mb-3">
+                                <Form.Label className="fw-bold">Grade / Batch</Form.Label>
                                 <Form.Select value={grade} onChange={(e) => setGrade(e.target.value)}>
                                     <option value="Grade 6">Grade 6</option>
                                     <option value="Grade 7">Grade 7</option>
@@ -135,54 +119,52 @@ function AddStudent({ onStudentAdded }) {
                             </Form.Group>
                         </Col>
                     </Row>
+
                     <Row>
                         <Col md={6}>
-                            <Form.Group className="mb-3" controlId="formLocation">
-                                <Form.Label>Location</Form.Label>
+                            <Form.Group className="mb-3">
+                                <Form.Label className="fw-bold">Class Location</Form.Label>
                                 <Form.Select
                                     value={location}
                                     onChange={(e) => setLocation(e.target.value)}
                                     disabled={locationLoading}
-                                    required // Make location required
+                                    required
                                 >
-                                    {/* Handle loading and empty states */}
                                     {locationLoading ? (
                                         <option>Loading locations...</option>
+                                    ) : locations.length > 0 ? (
+                                        <>
+                                            <option value="">-- Select Location --</option>
+                                            {locations.map(loc => (
+                                                <option key={loc._id} value={loc.name}>{loc.name}</option>
+                                            ))}
+                                        </>
                                     ) : (
-                                        locations.length > 0 ? (
-                                            // Add a default prompt option if needed, or rely on initial state
-                                             <>
-                                                 <option value="">-- Select Location --</option>
-                                                 {locations.map(loc => (
-                                                     <option key={loc._id} value={loc.name}>
-                                                         {loc.name}
-                                                     </option>
-                                                 ))}
-                                             </>
-                                        ) : (
-                                            <option value="">No locations configured</option>
-                                        )
+                                        <option value="">No locations found. Add one in settings!</option>
                                     )}
                                 </Form.Select>
                             </Form.Group>
                         </Col>
                         <Col md={6}>
-                            <Form.Group className="mb-3" controlId="formContactPhone">
-                                <Form.Label>Contact Phone</Form.Label>
+                            <Form.Group className="mb-3">
+                                <Form.Label className="fw-bold">Contact Phone</Form.Label>
                                 <Form.Control
                                     type="text"
+                                    placeholder="e.g. 0771234567"
                                     value={contactPhone}
                                     onChange={(e) => setContactPhone(e.target.value)}
                                 />
                             </Form.Group>
                         </Col>
                     </Row>
+
                     <Row>
                         <Col md={6}>
-                            <Form.Group className="mb-3" controlId="formParentName">
-                                <Form.Label>Parent's Name</Form.Label>
+                            <Form.Group className="mb-4">
+                                <Form.Label className="fw-bold">Parent / Guardian Name</Form.Label>
                                 <Form.Control
                                     type="text"
+                                    placeholder="Enter parent's name"
                                     value={parentName}
                                     onChange={(e) => setParentName(e.target.value)}
                                 />
@@ -190,9 +172,11 @@ function AddStudent({ onStudentAdded }) {
                         </Col>
                     </Row>
 
-                    <Button variant="primary" type="submit" disabled={locationLoading}>
-                        Add Student
-                    </Button>
+                    <div className="d-grid">
+                        <Button variant="primary" type="submit" size="lg" disabled={loading || locationLoading}>
+                            {loading ? <><Spinner size="sm" className="me-2" /> Saving...</> : 'Register Student'}
+                        </Button>
+                    </div>
                 </Form>
             </Card.Body>
         </Card>
