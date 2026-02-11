@@ -44,3 +44,5 @@ paymentSchema.index({ teacherId: 1, student: 1, month: 1, year: 1 }, { unique: t
 
 const Payment = mongoose.model('Payment', paymentSchema);
 module.exports = Payment;
+
+
