@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Container, Row, Col, Card, Form, Button, ListGroup, Spinner, Alert, CloseButton } from 'react-bootstrap';
 import { useAuth } from '../context/AuthContext';
-import { FaUserEdit, FaMapMarkerAlt, FaClinicMedical, FaExclamationTriangle } from 'react-icons/fa';
+import { FaUserEdit, FaMapMarkerAlt, FaExclamationTriangle } from 'react-icons/fa'; // Removed unused FaClinicMedical
 
 function SettingsPage() {
-    const { teacher, login } = useAuth(); // login function helps update the local state after saving
+    const { teacher, login } = useAuth(); 
     
-    // --- State for Profile ---
     const [profileData, setProfileData] = useState({
         firstName: teacher?.firstName || '',
         lastName: teacher?.lastName || '',
@@ -18,14 +17,12 @@ function SettingsPage() {
     const [profileMessage, setProfileMessage] = useState('');
     const [profileError, setProfileError] = useState('');
 
-    // --- State for Locations ---
     const [locations, setLocations] = useState([]);
     const [loadingLocations, setLoadingLocations] = useState(true);
     const [locationError, setLocationError] = useState('');
     const [newLocationName, setNewLocationName] = useState('');
     const [formError, setFormError] = useState('');
 
-    // --- State for Data Resets ---
     const [resettingFinance, setResettingFinance] = useState(false);
     const [resetFinanceMessage, setResetFinanceMessage] = useState('');
     const [resetFinanceError, setResetFinanceError] = useState('');
@@ -40,25 +37,26 @@ function SettingsPage() {
 
     const apiUrl = process.env.REACT_APP_API_URL;
 
-    // --- Fetch teacher-specific locations ---
-    const fetchLocations = async () => {
+    // --- Wrapped in useCallback to satisfy Vercel's build rules ---
+    const fetchLocations = useCallback(async () => {
+        if (!teacher || !apiUrl) return;
         setLoadingLocations(true);
         setLocationError('');
         try {
             const response = await axios.get(`${apiUrl}/api/locations`);
             setLocations(response.data);
         } catch (err) {
+            console.error("Failed to fetch locations:", err);
             setLocationError(`Could not load locations: ${err.response?.data?.message || err.message}`);
         } finally {
             setLoadingLocations(false);
         }
-    };
+    }, [teacher, apiUrl]);
 
     useEffect(() => {
-        if (teacher) fetchLocations();
-    }, [teacher]);
+        fetchLocations();
+    }, [fetchLocations]);
 
-    // --- Handle Profile Update ---
     const handleProfileUpdate = async (e) => {
         e.preventDefault();
         setProfileLoading(true);
@@ -67,7 +65,6 @@ function SettingsPage() {
 
         try {
             const response = await axios.put(`${apiUrl}/api/auth/update`, profileData);
-            // Update the global auth context so the Navbar and Dashboard reflect changes immediately
             login(localStorage.getItem('token'), response.data.teacher); 
             setProfileMessage('Profile updated successfully!');
         } catch (err) {
@@ -81,7 +78,6 @@ function SettingsPage() {
         setProfileData({ ...profileData, [e.target.name]: e.target.value });
     };
 
-    // --- Add/Delete Locations ---
     const handleAddLocation = async (e) => {
         e.preventDefault();
         setFormError('');
@@ -106,7 +102,6 @@ function SettingsPage() {
         }
     };
 
-    // --- Reset Handlers (Scoped to Teacher) ---
     const handleResetFinance = async () => {
         setResetFinanceMessage(''); setResetFinanceError('');
         if (window.confirm('🚨 DANGER: This will delete ALL your payment records forever.')) {
@@ -157,7 +152,6 @@ function SettingsPage() {
 
             <Row>
                 <Col lg={7}>
-                    {/* --- Account Profile Card --- */}
                     <Card className="shadow-sm border-0 mb-4">
                         <Card.Header className="bg-white py-3">
                             <h5 className="mb-0 fw-bold"><FaUserEdit className="me-2" /> Account Profile</h5>
@@ -195,7 +189,6 @@ function SettingsPage() {
                         </Card.Body>
                     </Card>
 
-                    {/* --- Location Management --- */}
                     <Card className="shadow-sm border-0 mb-4">
                         <Card.Header className="bg-white py-3">
                             <h5 className="mb-0 fw-bold"><FaMapMarkerAlt className="me-2" /> My Class Venues</h5>
@@ -211,6 +204,9 @@ function SettingsPage() {
                                 />
                                 <Button type="submit" variant="dark">Add</Button>
                             </Form>
+                            
+                            {formError && <Alert variant="danger" className="small py-2">{formError}</Alert>}
+                            {locationError && <Alert variant="warning" className="small py-2">{locationError}</Alert>}
                             
                             <ListGroup variant="flush" className="border rounded">
                                 {loadingLocations ? (
@@ -230,7 +226,6 @@ function SettingsPage() {
                     </Card>
                 </Col>
 
-                {/* --- Danger Zone --- */}
                 <Col lg={5}>
                     <h5 className="mb-3 text-danger fw-bold px-1"><FaExclamationTriangle className="me-2" /> Danger Zone</h5>
                     
@@ -239,6 +234,7 @@ function SettingsPage() {
                             <h6 className="fw-bold">Reset Financial Data</h6>
                             <p className="small text-muted">Delete all fee records. This is permanent.</p>
                             {resetFinanceMessage && <Alert variant="success" className="small">{resetFinanceMessage}</Alert>}
+                            {resetFinanceError && <Alert variant="danger" className="small">{resetFinanceError}</Alert>}
                             <Button variant="outline-danger" size="sm" onClick={handleResetFinance} disabled={resettingFinance}>
                                 {resettingFinance ? <Spinner size="sm" /> : 'Delete Payments'}
                             </Button>
@@ -250,6 +246,7 @@ function SettingsPage() {
                             <h6 className="fw-bold">Reset Attendance History</h6>
                             <p className="small text-muted">Clear all class attendance logs forever.</p>
                             {resetAttendanceMessage && <Alert variant="success" className="small">{resetAttendanceMessage}</Alert>}
+                            {resetAttendanceError && <Alert variant="danger" className="small">{resetAttendanceError}</Alert>}
                             <Button variant="outline-danger" size="sm" onClick={handleResetAttendance} disabled={resettingAttendance}>
                                 {resettingAttendance ? <Spinner size="sm" /> : 'Clear Logs'}
                             </Button>
@@ -261,6 +258,7 @@ function SettingsPage() {
                             <h6 className="fw-bold">Deactivate All Students</h6>
                             <p className="small text-muted">Archive all active students. Records are kept.</p>
                             {resetStudentsMessage && <Alert variant="success" className="small">{resetStudentsMessage}</Alert>}
+                            {resetStudentsError && <Alert variant="danger" className="small">{resetStudentsError}</Alert>}
                             <Button variant="outline-danger" size="sm" onClick={handleResetStudents} disabled={resettingStudents}>
                                 {resettingStudents ? <Spinner size="sm" /> : 'Deactivate All'}
                             </Button>

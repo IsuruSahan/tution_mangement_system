@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Container, Row, Col, Form, Button, Card, ListGroup, Spinner, Alert, Tabs, Tab, Table, Badge } from 'react-bootstrap';
-import { useAuth } from '../context/AuthContext'; // Import Auth context
+import { useAuth } from '../context/AuthContext';
 
 const getISODate = (date) => date.toISOString().split('T')[0];
 
 function AttendancePage() {
-    const { teacher } = useAuth(); // Access global teacher state
+    const { teacher } = useAuth();
 
     // --- Take Attendance State ---
     const [takeGrade, setTakeGrade] = useState('Grade 6');
@@ -22,13 +22,13 @@ function AttendancePage() {
     const [locationLoading, setLocationLoading] = useState(true);
     const [locationError, setLocationError] = useState('');
     const [allActiveStudents, setAllActiveStudents] = useState([]);
-    const [studentsLoading, setStudentsLoading] = useState(true);
+    // Removed unused 'studentsLoading' to satisfy ESLint
 
     // --- Report State ---
     const [selectedStudentId, setSelectedStudentId] = useState('');
     const [studentRecords, setStudentRecords] = useState([]);
     const [reportLoading, setReportLoading] = useState(false);
-    const [reportError, setReportError] = useState('');
+    // Removed unused 'reportError' to satisfy ESLint
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
     const [reportGradeFilter, setReportGradeFilter] = useState('All');
@@ -40,35 +40,33 @@ function AttendancePage() {
     const apiUrl = process.env.REACT_APP_API_URL;
 
     // --- Initial Secure Data Fetch ---
-    useEffect(() => {
-        const fetchData = async () => {
-            if (!teacher) return;
-            
-            setLocationLoading(true); 
-            setStudentsLoading(true);
-            
-            try {
-                // 1. Fetch Teacher's Locations
-                const locRes = await axios.get(`${apiUrl}/api/locations`);
-                setLocations(locRes.data);
-                if (locRes.data.length > 0 && !takeLocation) {
-                    setTakeLocation(locRes.data[0].name);
-                }
-
-                // 2. Fetch Teacher's Active Students
-                const stuRes = await axios.get(`${apiUrl}/api/students`);
-                setAllActiveStudents(stuRes.data);
-                setFilteredStudentsForReport(stuRes.data);
-            } catch (err) {
-                console.error("Initialization error:", err);
-                setLocationError("Failed to synchronize your account data.");
-            } finally {
-                setLocationLoading(false);
-                setStudentsLoading(false);
+    // Wrapped in useCallback to prevent the 'missing dependency' build error
+    const fetchInitialData = useCallback(async () => {
+        if (!teacher || !apiUrl) return;
+        
+        setLocationLoading(true); 
+        
+        try {
+            const locRes = await axios.get(`${apiUrl}/api/locations`);
+            setLocations(locRes.data);
+            if (locRes.data.length > 0 && !takeLocation) {
+                setTakeLocation(locRes.data[0].name);
             }
-        };
-        fetchData();
-    }, [teacher, apiUrl]);
+
+            const stuRes = await axios.get(`${apiUrl}/api/students`);
+            setAllActiveStudents(stuRes.data);
+            setFilteredStudentsForReport(stuRes.data);
+        } catch (err) {
+            console.error("Initialization error:", err);
+            setLocationError("Failed to synchronize your account data.");
+        } finally {
+            setLocationLoading(false);
+        }
+    }, [teacher, apiUrl, takeLocation]);
+
+    useEffect(() => {
+        fetchInitialData();
+    }, [fetchInitialData]);
 
     // --- Mark Attendance (Auth-Aware) ---
     const handleLoadClass = async () => {
@@ -102,9 +100,8 @@ function AttendancePage() {
         }
     };
 
-    // --- Report Logic (Auth-Aware) ---
+    // --- Report Logic ---
     const handleFilterStudentsForReport = () => {
-        setReportError('');
         const filtered = allActiveStudents.filter(student => {
             const gradeMatch = reportGradeFilter === 'All' || student.grade === reportGradeFilter;
             const locationMatch = reportLocationFilter === 'All' || student.location === reportLocationFilter;
@@ -128,7 +125,7 @@ function AttendancePage() {
                 const response = await axios.get(`${apiUrl}/api/attendance/student/${selectedStudentId}`, { params });
                 setStudentRecords(response.data);
             } catch (err) {
-                setReportError('Could not retrieve specific attendance records.');
+                console.error("Report fetch error:", err);
             } finally { setReportLoading(false); }
         };
         fetchStudentAttendance();
@@ -223,7 +220,7 @@ function AttendancePage() {
                                     <Col md={2}><Form.Group><Form.Label className="small fw-bold">Grade</Form.Label><Form.Select size="sm" value={reportGradeFilter} onChange={handleReportFilterChange(setReportGradeFilter)}><option value="All">All</option><option value="Grade 6">Grade 6</option><option value="Grade 11">Grade 11</option></Form.Select></Form.Group></Col>
                                     <Col md={3}><Form.Group><Form.Label className="small fw-bold">Location</Form.Label><Form.Select size="sm" value={reportLocationFilter} onChange={handleReportFilterChange(setReportLocationFilter)} disabled={locationLoading}>{locations.map(loc => (<option key={loc._id} value={loc.name}>{loc.name}</option>))}</Form.Select></Form.Group></Col>
                                     <Col md={4}><Form.Group><Form.Label className="small fw-bold">Search Name</Form.Label><Form.Control size="sm" type="text" placeholder="Student name..." value={reportNameFilter} onChange={handleReportFilterChange(setReportNameFilter)} /></Form.Group></Col>
-                                    <Col md={3}><Button size="sm" variant="dark" onClick={handleFilterStudentsForReport} className="w-100">Filter Students</Button></Col>
+                                    <Col md={3}><Button size="sm" variant="dark" onClick={handleFilterStudentsForReport} className="w-100" disabled={locationLoading}>Filter Students</Button></Col>
                                 </Row>
                             </Form>
 
