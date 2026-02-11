@@ -10,8 +10,17 @@ export const AuthProvider = ({ children }) => {
 
     const apiUrl = process.env.REACT_APP_API_URL;
 
-    // --- 1. AXIOS INTERCEPTOR ---
-    // This is the magic fix. It attaches the token to EVERY outgoing request automatically.
+    // --- 1. DEFINE LOGOUT FIRST ---
+    const logout = useCallback(() => {
+        localStorage.removeItem('token');
+        setToken(null);
+        setTeacher(null);
+        setLoading(false);
+        // Clear global headers
+        delete axios.defaults.headers.common['Authorization'];
+    }, []);
+
+    // --- 2. AXIOS INTERCEPTOR ---
     useEffect(() => {
         if (token) {
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -20,45 +29,35 @@ export const AuthProvider = ({ children }) => {
         }
     }, [token]);
 
-    // --- 2. FETCH TEACHER DATA ---
+    // --- 3. FETCH TEACHER DATA ---
     const fetchTeacher = useCallback(async () => {
-        // If there's no token, we can't be logged in.
         if (!token) {
             setLoading(false);
             return;
         }
 
         try {
-            // No need to manually add headers here anymore because of the interceptor above!
             const res = await axios.get(`${apiUrl}/api/auth/me`);
             setTeacher(res.data);
         } catch (err) {
             console.error("Session verification failed:", err.response?.data?.message || err.message);
-            // If the token is expired or fake, clean up.
-            logout(); 
+            logout(); // Now listed in dependencies below
         } finally {
             setLoading(false);
         }
-    }, [token, apiUrl]);
+    }, [token, apiUrl, logout]); // Added logout here to satisfy ESLint
 
     useEffect(() => {
         fetchTeacher();
     }, [fetchTeacher]);
 
-    // --- 3. AUTH ACTIONS ---
+    // --- 4. LOGIN ACTION ---
     const login = (newToken, teacherData) => {
         localStorage.setItem('token', newToken);
         setToken(newToken);
         setTeacher(teacherData);
         setLoading(false);
     };
-
-    const logout = useCallback(() => {
-        localStorage.removeItem('token');
-        setToken(null);
-        setTeacher(null);
-        setLoading(false);
-    }, []);
 
     return (
         <AuthContext.Provider value={{ teacher, token, login, logout, loading }}>
