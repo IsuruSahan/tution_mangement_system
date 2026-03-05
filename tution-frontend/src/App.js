@@ -22,11 +22,7 @@ import RegisterPage from './pages/RegisterPage';
 // A small internal component to handle redirecting logged-in users 
 // away from public pages like Login and Register.
 const PublicRoute = ({ children }) => {
-    const { token, loading } = useAuth();
-    
-    // If we are still checking the token, show nothing or a spinner
-    if (loading) return null; 
-    
+    const { token } = useAuth();
     return token ? <Navigate to="/" /> : children;
 };
 
