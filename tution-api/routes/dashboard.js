@@ -164,7 +164,7 @@ router.get('/', async (req, res) => {
             presentTodayByGrade,
             pendingPaymentsByGrade,
             
-            // Chart dataa
+            // Chart data
             paymentStatusThisMonth
         });
 
