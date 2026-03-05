@@ -1,23 +1,18 @@
 const router = require('express').Router();
 const Payment = require('../models/Payment');
 const Student = require('../models/Student');
-const auth = require('../middleware/auth'); // Import security guard
 
-// --- GET payment status list (Filtered by Teacher) ---
 // GET /api/payments/statuslist
-router.get('/statuslist', auth, async (req, res) => {
+// This function is correct from our previous chat
+router.get('/statuslist', async (req, res) => {
     try {
         const { month, year, grade, location } = req.query;
         if (!month || !year) {
             return res.status(400).json({ message: 'Month and Year are required.' });
         }
 
-        // 1. Build student filter - STRICTLY scoped to this teacher
-        const studentFilter = { 
-            isActive: true, 
-            teacherId: req.teacherId 
-        };
-        
+        // 1. Build student filter
+        const studentFilter = { isActive: true };
         if (grade && grade !== 'All') {
             studentFilter.grade = grade;
         }
@@ -25,15 +20,11 @@ router.get('/statuslist', auth, async (req, res) => {
             studentFilter.location = location;
         }
 
-        // 2. Get ONLY this teacher's students
+        // 2. Get all students matching the filter
         const students = await Student.find(studentFilter).sort({ name: 1 });
 
-        // 3. Get ONLY this teacher's payments for this specific time
-        const payments = await Payment.find({ 
-            month, 
-            year, 
-            teacherId: req.teacherId 
-        });
+        // 3. Get all payments for the selected month/year
+        const payments = await Payment.find({ month, year });
 
         // 4. Create a Map of payments for fast lookup
         const paymentMap = new Map();
@@ -58,72 +49,75 @@ router.get('/statuslist', auth, async (req, res) => {
     }
 });
 
-// --- MARK A PAYMENT (UPSERT) (Filtered by Teacher) ---
+
+// --- THIS IS THE FIXED FUNCTION ---
+// NEW - MARK A PAYMENT (UPSERT)
 // POST /api/payments/mark
-router.post('/mark', auth, async (req, res) => {
+router.post('/mark', async (req, res) => {
     try {
         const { studentId, month, year, status, amount } = req.body;
 
-        // Security check: Ensure the student belongs to this teacher
-        const studentCheck = await Student.findOne({ _id: studentId, teacherId: req.teacherId });
-        if (!studentCheck) {
-            return res.status(403).json({ message: "Unauthorized: Student does not belong to you." });
-        }
+        const filter = { student: studentId, month, year };
 
-        // Filter must include teacherId to ensure isolation
-        const filter = { 
-            student: studentId, 
-            teacherId: req.teacherId, 
-            month, 
-            year 
-        };
-
+        // Define the fields to update
         const updateDoc = {
             $set: { 
                 status: status,
-                student: studentId,
-                teacherId: req.teacherId, // Ensure teacherId is saved on insert
-                month: month,
-                year: year
+                student: studentId, // Need these for the upsert
+                month: month,       // Need these for the upsert
+                year: year        // Need these for the upsert
             }
         };
 
+        // This is the critical logic:
         if (amount !== undefined) {
+            // If an amount is provided (from "Save Paid" button),
+            // it will be set here.
             updateDoc.$set.amount = Number(amount);
         } else if (status === 'Pending') {
-            updateDoc.$set.amount = 0; 
+            // If marking as 'Pending', set amount back to null or 0
+             updateDoc.$set.amount = 0; 
         } else {
+            // If no amount is provided (e.g., old code),
+            // set it to 0 only if this is a NEW record.
             updateDoc.$setOnInsert = { amount: 0 };
         }
         
+        // Find, update, and return the NEW document
         const updatedPayment = await Payment.findOneAndUpdate(
             filter,
             updateDoc,
             { new: true, upsert: true, setDefaultsOnInsert: true }
         );
         
+        // Send the complete, updated record back to the frontend
         res.status(201).json(updatedPayment);
 
     } catch (err) {
         res.status(400).json({ message: err.message });
     }
 });
+// --- END OF FIXED FUNCTION ---
 
-// --- RESET (Delete ALL) payments for THIS teacher ---
+// *** ADD THIS NEW ROUTE ***
 // DELETE /api/payments/reset
-router.delete('/reset', auth, async (req, res) => {
+router.delete('/reset', async (req, res) => {
     try {
-        // ONLY delete records belonging to this teacher
-        const deleteResult = await Payment.deleteMany({ teacherId: req.teacherId });
+        // Delete ALL documents from the Payment collection
+        const deleteResult = await Payment.deleteMany({});
 
+        // Respond with success and the number of records deleted
         res.json({
-            message: `Successfully reset your finance data. Deleted ${deleteResult.deletedCount} records.`,
+            message: `Successfully reset finance data. Deleted ${deleteResult.deletedCount} payment records.`,
             deletedCount: deleteResult.deletedCount
         });
     } catch (err) {
         console.error("Error resetting finance data:", err);
-        res.status(500).json({ message: 'Error: ' + err.message });
+        res.status(500).json({ message: 'Error resetting finance data: ' + err.message });
     }
 });
+// *** END OF NEW ROUTE ***
+
+
 
 module.exports = router;

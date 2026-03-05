@@ -1,23 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Container, Row, Col, Card, Form, Button, ListGroup, Spinner, Alert, CloseButton } from 'react-bootstrap';
-import { useAuth } from '../context/AuthContext';
-import { FaUserEdit, FaMapMarkerAlt, FaClinicMedical, FaExclamationTriangle } from 'react-icons/fa';
 
 function SettingsPage() {
-    const { teacher, login } = useAuth(); // login function helps update the local state after saving
-    
-    // --- State for Profile ---
-    const [profileData, setProfileData] = useState({
-        firstName: teacher?.firstName || '',
-        lastName: teacher?.lastName || '',
-        instituteName: teacher?.instituteName || '',
-        location: teacher?.location || ''
-    });
-    const [profileLoading, setProfileLoading] = useState(false);
-    const [profileMessage, setProfileMessage] = useState('');
-    const [profileError, setProfileError] = useState('');
-
     // --- State for Locations ---
     const [locations, setLocations] = useState([]);
     const [loadingLocations, setLoadingLocations] = useState(true);
@@ -25,247 +10,221 @@ function SettingsPage() {
     const [newLocationName, setNewLocationName] = useState('');
     const [formError, setFormError] = useState('');
 
-    // --- State for Data Resets ---
+    // --- State for Finance Reset ---
     const [resettingFinance, setResettingFinance] = useState(false);
     const [resetFinanceMessage, setResetFinanceMessage] = useState('');
     const [resetFinanceError, setResetFinanceError] = useState('');
 
+    // --- State for Attendance Reset ---
     const [resettingAttendance, setResettingAttendance] = useState(false);
     const [resetAttendanceMessage, setResetAttendanceMessage] = useState('');
     const [resetAttendanceError, setResetAttendanceError] = useState('');
 
+    // --- State for Student Reset ---
     const [resettingStudents, setResettingStudents] = useState(false);
     const [resetStudentsMessage, setResetStudentsMessage] = useState('');
     const [resetStudentsError, setResetStudentsError] = useState('');
 
+    // Get API URL from environment
     const apiUrl = process.env.REACT_APP_API_URL;
 
-    // --- Fetch teacher-specific locations ---
+    // --- Fetch locations from API ---
     const fetchLocations = async () => {
         setLoadingLocations(true);
         setLocationError('');
         try {
-            const response = await axios.get(`${apiUrl}/api/locations`);
+            if (!apiUrl) throw new Error("API URL is not configured.");
+            const response = await axios.get(`${apiUrl}/api/locations`); // Use apiUrl
             setLocations(response.data);
         } catch (err) {
-            setLocationError(`Could not load locations: ${err.response?.data?.message || err.message}`);
+            console.error("Failed to fetch locations:", err);
+            setLocationError(`Could not load locations: ${err.message}`);
         } finally {
             setLoadingLocations(false);
         }
     };
 
     useEffect(() => {
-        if (teacher) fetchLocations();
-    }, [teacher]);
-
-    // --- Handle Profile Update ---
-    const handleProfileUpdate = async (e) => {
-        e.preventDefault();
-        setProfileLoading(true);
-        setProfileMessage('');
-        setProfileError('');
-
-        try {
-            const response = await axios.put(`${apiUrl}/api/auth/update`, profileData);
-            // Update the global auth context so the Navbar and Dashboard reflect changes immediately
-            login(localStorage.getItem('token'), response.data.teacher); 
-            setProfileMessage('Profile updated successfully!');
-        } catch (err) {
-            setProfileError(err.response?.data?.message || 'Failed to update profile.');
-        } finally {
-            setProfileLoading(false);
+        if(apiUrl) { // Only fetch if apiUrl is set
+            fetchLocations();
+        } else {
+            setLocationError("API URL is not configured. Check Vercel/local .env file.");
+            setLoadingLocations(false);
         }
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apiUrl]); // Re-run if apiUrl changes (though it shouldn't)
 
-    const handleProfileChange = (e) => {
-        setProfileData({ ...profileData, [e.target.name]: e.target.value });
-    };
-
-    // --- Add/Delete Locations ---
+    // --- Handle adding a location ---
     const handleAddLocation = async (e) => {
         e.preventDefault();
         setFormError('');
-        if (!newLocationName.trim()) { setFormError('Location name cannot be empty.'); return; }
+        if (!newLocationName) { setFormError('Location name cannot be empty.'); return; }
+        if (!apiUrl) { setFormError("API URL not configured."); return; } // Check URL
         try {
-            const response = await axios.post(`${apiUrl}/api/locations`, { name: newLocationName });
+            const response = await axios.post(`${apiUrl}/api/locations`, { name: newLocationName }); // Use apiUrl
             setLocations([...locations, response.data]);
             setNewLocationName('');
         } catch (err) {
-             setFormError(`Error: ${err.response?.data?.message || err.message}`);
+             console.error("Error adding location:", err);
+             setFormError(`Error adding location: ${err.response?.data?.message || err.message}`);
          }
     };
 
+    // --- Handle deleting a location ---
     const handleDeleteLocation = async (id) => {
-        if (window.confirm('Delete this location? This will not remove students assigned here.')) {
+        if (!apiUrl) { alert("API URL not configured."); return; } // Check URL
+        if (window.confirm('Are you sure you want to delete this location?')) {
             try {
-                await axios.delete(`${apiUrl}/api/locations/${id}`);
+                await axios.delete(`${apiUrl}/api/locations/${id}`); // Use apiUrl
                 setLocations(locations.filter(loc => loc._id !== id));
             } catch (err) {
-                 alert(`Error: ${err.response?.data?.message || err.message}`);
+                 console.error("Error deleting location:", err);
+                 alert(`Error deleting location: ${err.response?.data?.message || err.message}`);
              }
         }
     };
 
-    // --- Reset Handlers (Scoped to Teacher) ---
+    // --- Handle Reset Finance Data ---
     const handleResetFinance = async () => {
         setResetFinanceMessage(''); setResetFinanceError('');
-        if (window.confirm('🚨 DANGER: This will delete ALL your payment records forever.')) {
+        if (!apiUrl) { setResetFinanceError("API URL not configured."); return; } // Check URL
+        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE...?') &&
+            window.confirm('🚨 FINAL WARNING! Really delete all finance data?')) {
             setResettingFinance(true);
             try {
-                const response = await axios.delete(`${apiUrl}/api/payments/reset`);
-                setResetFinanceMessage(response.data.message);
+                const response = await axios.delete(`${apiUrl}/api/payments/reset`); // Use apiUrl
+                setResetFinanceMessage(response.data.message || 'Finance data reset successfully.');
             } catch (err) {
-                 setResetFinanceError(err.response?.data?.message || err.message);
-            } finally { setResettingFinance(false); }
+                 console.error("Error resetting finance data:", err);
+                 setResetFinanceError(`Failed to reset finance data: ${err.response?.data?.message || err.message}`);
+            } finally {
+                setResettingFinance(false);
+            }
         }
     };
 
+    // --- Handle Reset Attendance Data ---
     const handleResetAttendance = async () => {
         setResetAttendanceMessage(''); setResetAttendanceError('');
-        if (window.confirm('🚨 DANGER: This will delete ALL your attendance logs.')) {
+        if (!apiUrl) { setResetAttendanceError("API URL not configured."); return; } // Check URL
+        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE...?') &&
+            window.confirm('🚨 FINAL WARNING! Really delete all attendance data?')) {
             setResettingAttendance(true);
             try {
-                const response = await axios.delete(`${apiUrl}/api/attendance/reset`);
-                setResetAttendanceMessage(response.data.message);
+                const response = await axios.delete(`${apiUrl}/api/attendance/reset`); // Use apiUrl
+                setResetAttendanceMessage(response.data.message || 'Attendance data reset successfully.');
             } catch (err) {
-                 setResetAttendanceError(err.response?.data?.message || err.message);
-            } finally { setResettingAttendance(false); }
+                 console.error("Error resetting attendance data:", err);
+                 setResetAttendanceError(`Failed to reset attendance data: ${err.response?.data?.message || err.message}`);
+            } finally {
+                setResettingAttendance(false);
+            }
         }
     };
 
+    // --- Handle Reset Student Data ---
     const handleResetStudents = async () => {
         setResetStudentsMessage(''); setResetStudentsError('');
-        if (window.confirm('🚨 WARNING: This will hide all your current students. Proceed?')) {
+        if (!apiUrl) { setResetStudentsError("API URL not configured."); return; } // Check URL
+        if (window.confirm('🚨 DANGER! Are you ABSOLUTELY SURE...?') &&
+            window.confirm('🚨 FINAL WARNING! Really deactivate all students?')) {
             setResettingStudents(true);
             try {
-                const response = await axios.delete(`${apiUrl}/api/students/reset`);
-                setResetStudentsMessage(response.data.message);
+                const response = await axios.delete(`${apiUrl}/api/students/reset`); // Use apiUrl
+                setResetStudentsMessage(response.data.message || 'All students deactivated successfully.');
             } catch (err) {
-                 setResetStudentsError(err.response?.data?.message || err.message);
-            } finally { setResettingStudents(false); }
+                 console.error("Error deactivating students:", err);
+                 setResetStudentsError(`Failed to deactivate students: ${err.response?.data?.message || err.message}`);
+            } finally {
+                setResettingStudents(false);
+            }
         }
     };
 
+
     return (
-        <Container className="mt-4 pb-5">
-            <div className="mb-4">
-                <h2 className="fw-bold">Settings</h2>
-                <p className="text-muted">
-                    Account: <strong>{teacher?.firstName} {teacher?.lastName}</strong> | {teacher?.instituteName}
-                </p>
-            </div>
-
+        <Container className="mt-4">
             <Row>
-                <Col lg={7}>
-                    {/* --- Account Profile Card --- */}
-                    <Card className="shadow-sm border-0 mb-4">
-                        <Card.Header className="bg-white py-3">
-                            <h5 className="mb-0 fw-bold"><FaUserEdit className="me-2" /> Account Profile</h5>
-                        </Card.Header>
+                {/* --- Manage Locations Card --- */}
+                <Col md={12} lg={6} className="mb-4">
+                    <Card>
+                        <Card.Header> <Card.Title as="h2" className="mb-0">Manage Locations</Card.Title> </Card.Header>
                         <Card.Body>
-                            {profileMessage && <Alert variant="success">{profileMessage}</Alert>}
-                            {profileError && <Alert variant="danger">{profileError}</Alert>}
-                            <Form onSubmit={handleProfileUpdate}>
-                                <Row>
-                                    <Col md={6}>
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="small fw-bold">First Name</Form.Label>
-                                            <Form.Control type="text" name="firstName" value={profileData.firstName} onChange={handleProfileChange} required />
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={6}>
-                                        <Form.Group className="mb-3">
-                                            <Form.Label className="small fw-bold">Last Name</Form.Label>
-                                            <Form.Control type="text" name="lastName" value={profileData.lastName} onChange={handleProfileChange} required />
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-                                <Form.Group className="mb-3">
-                                    <Form.Label className="small fw-bold">Institute Name</Form.Label>
-                                    <Form.Control type="text" name="instituteName" value={profileData.instituteName} onChange={handleProfileChange} required />
-                                </Form.Group>
-                                <Form.Group className="mb-4">
-                                    <Form.Label className="small fw-bold">Base City / Location</Form.Label>
-                                    <Form.Control type="text" name="location" value={profileData.location} onChange={handleProfileChange} required />
-                                </Form.Group>
-                                <Button variant="primary" type="submit" disabled={profileLoading}>
-                                    {profileLoading ? <Spinner size="sm" /> : 'Save Profile Changes'}
-                                </Button>
-                            </Form>
-                        </Card.Body>
-                    </Card>
-
-                    {/* --- Location Management --- */}
-                    <Card className="shadow-sm border-0 mb-4">
-                        <Card.Header className="bg-white py-3">
-                            <h5 className="mb-0 fw-bold"><FaMapMarkerAlt className="me-2" /> My Class Venues</h5>
-                        </Card.Header>
-                        <Card.Body>
+                            <h5 className="mb-3">Add New Location</h5>
+                            {formError && <Alert variant="danger">{formError}</Alert>}
                             <Form onSubmit={handleAddLocation} className="d-flex mb-4">
                                 <Form.Control
                                     type="text"
-                                    placeholder="e.g., Colombo Hall"
+                                    placeholder="Enter new location name"
                                     value={newLocationName}
                                     onChange={(e) => setNewLocationName(e.target.value)}
                                     className="me-2"
                                 />
-                                <Button type="submit" variant="dark">Add</Button>
+                                <Button type="submit" disabled={loadingLocations}>Add</Button>
                             </Form>
-                            
-                            <ListGroup variant="flush" className="border rounded">
-                                {loadingLocations ? (
-                                    <div className="p-3 text-center"><Spinner animation="border" size="sm" /></div>
-                                ) : locations.length > 0 ? (
+                            <hr />
+                            <h5 className="mb-3">Current Locations</h5>
+                            {loadingLocations && <Spinner animation="border" size="sm" />}
+                            {locationError && <Alert variant="danger">{locationError}</Alert>}
+                            <ListGroup>
+                                {!loadingLocations && locations.length > 0 ? (
                                     locations.map(loc => (
-                                        <ListGroup.Item key={loc._id} className="d-flex justify-content-between align-items-center py-3">
-                                            <span className="fw-semibold">{loc.name}</span>
-                                            <CloseButton onClick={() => handleDeleteLocation(loc._id)} />
+                                        <ListGroup.Item key={loc._id} className="d-flex justify-content-between align-items-center">
+                                            {loc.name}
+                                            <CloseButton onClick={() => handleDeleteLocation(loc._id)} title="Delete" />
                                         </ListGroup.Item>
                                     ))
                                 ) : (
-                                    <ListGroup.Item className="text-muted text-center py-4">No venues added.</ListGroup.Item>
+                                    !loadingLocations && <p className="text-muted">No locations added yet.</p>
                                 )}
                             </ListGroup>
                         </Card.Body>
                     </Card>
                 </Col>
 
-                {/* --- Danger Zone --- */}
-                <Col lg={5}>
-                    <h5 className="mb-3 text-danger fw-bold px-1"><FaExclamationTriangle className="me-2" /> Danger Zone</h5>
-                    
-                    <Card border="danger" className="mb-3 shadow-sm">
+                {/* --- Danger Zone Column --- */}
+                <Col md={12} lg={6}>
+                    <h2 className="mb-3 text-danger">⚠️ Danger Zone</h2>
+
+                    {/* --- Reset Finance Card --- */}
+                    <Card border="danger" className="mb-4">
+                        <Card.Header className="bg-danger text-white"> <Card.Title as="h3" className="mb-0">Reset Finance Data</Card.Title> </Card.Header>
                         <Card.Body>
-                            <h6 className="fw-bold">Reset Financial Data</h6>
-                            <p className="small text-muted">Delete all fee records. This is permanent.</p>
-                            {resetFinanceMessage && <Alert variant="success" className="small">{resetFinanceMessage}</Alert>}
-                            <Button variant="outline-danger" size="sm" onClick={handleResetFinance} disabled={resettingFinance}>
-                                {resettingFinance ? <Spinner size="sm" /> : 'Delete Payments'}
+                            <p className="text-danger">Permanently delete <strong>ALL</strong> payment records.</p>
+                            {resetFinanceMessage && <Alert variant="success">{resetFinanceMessage}</Alert>}
+                            {resetFinanceError && <Alert variant="danger">{resetFinanceError}</Alert>}
+                            <Button variant="danger" onClick={handleResetFinance} disabled={resettingFinance}>
+                                {resettingFinance ? <Spinner as="span" animation="border" size="sm" /> : 'Reset Payments'}
                             </Button>
                         </Card.Body>
                     </Card>
 
-                    <Card border="danger" className="mb-3 shadow-sm">
+                    {/* --- Reset Attendance Card --- */}
+                    <Card border="danger" className="mb-4">
+                        <Card.Header className="bg-danger text-white"> <Card.Title as="h3" className="mb-0">Reset Attendance Data</Card.Title> </Card.Header>
                         <Card.Body>
-                            <h6 className="fw-bold">Reset Attendance History</h6>
-                            <p className="small text-muted">Clear all class attendance logs forever.</p>
-                            {resetAttendanceMessage && <Alert variant="success" className="small">{resetAttendanceMessage}</Alert>}
-                            <Button variant="outline-danger" size="sm" onClick={handleResetAttendance} disabled={resettingAttendance}>
-                                {resettingAttendance ? <Spinner size="sm" /> : 'Clear Logs'}
+                            <p className="text-danger">Permanently delete <strong>ALL</strong> attendance records.</p>
+                            {resetAttendanceMessage && <Alert variant="success">{resetAttendanceMessage}</Alert>}
+                            {resetAttendanceError && <Alert variant="danger">{resetAttendanceError}</Alert>}
+                            <Button variant="danger" onClick={handleResetAttendance} disabled={resettingAttendance}>
+                                {resettingAttendance ? <Spinner as="span" animation="border" size="sm" /> : 'Reset Attendance'}
                             </Button>
                         </Card.Body>
                     </Card>
 
-                    <Card border="danger" className="mb-3 shadow-sm">
+                     {/* --- Reset Students Card --- */}
+                    <Card border="danger" className="mb-4">
+                        <Card.Header className="bg-danger text-white"> <Card.Title as="h3" className="mb-0">Deactivate All Students</Card.Title> </Card.Header>
                         <Card.Body>
-                            <h6 className="fw-bold">Deactivate All Students</h6>
-                            <p className="small text-muted">Archive all active students. Records are kept.</p>
-                            {resetStudentsMessage && <Alert variant="success" className="small">{resetStudentsMessage}</Alert>}
-                            <Button variant="outline-danger" size="sm" onClick={handleResetStudents} disabled={resettingStudents}>
-                                {resettingStudents ? <Spinner size="sm" /> : 'Deactivate All'}
+                            <p className="text-danger">Set <strong>ALL</strong> students to inactive. They will be hidden but their data remains.</p>
+                            {resetStudentsMessage && <Alert variant="success">{resetStudentsMessage}</Alert>}
+                            {resetStudentsError && <Alert variant="danger">{resetStudentsError}</Alert>}
+                            <Button variant="danger" onClick={handleResetStudents} disabled={resettingStudents}>
+                                {resettingStudents ? <Spinner as="span" animation="border" size="sm" /> : 'Deactivate All Students'}
                             </Button>
                         </Card.Body>
                     </Card>
+
                 </Col>
             </Row>
         </Container>

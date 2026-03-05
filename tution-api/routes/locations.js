@@ -1,12 +1,11 @@
 const router = require('express').Router();
 const Location = require('../models/Location');
-const auth = require('../middleware/auth'); // Import the security guard
 
-// --- GET ALL locations (Filtered by Teacher) ---
-router.get('/', auth, async (req, res) => {
+// --- GET ALL locations ---
+// (No change to this function)
+router.get('/', async (req, res) => {
     try {
-        // Only find locations created by the logged-in teacher
-        const locations = await Location.find({ teacherId: req.teacherId }).sort({ name: 1 });
+        const locations = await Location.find().sort({ name: 1 });
         res.json(locations);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -14,41 +13,41 @@ router.get('/', auth, async (req, res) => {
 });
 
 // --- CREATE a new location ---
-router.post('/', auth, async (req, res) => {
+// (No change to this function)
+router.post('/', async (req, res) => {
     const location = new Location({
-        name: req.body.name,
-        teacherId: req.teacherId // Tag the location with the teacher's ID
+        name: req.body.name
     });
     try {
         const newLocation = await location.save();
         res.status(201).json(newLocation);
     } catch (err) {
-        // Handle duplicate location names for the SAME teacher
-        if (err.code === 11000) {
-            return res.status(400).json({ message: "You already have a location with this name." });
-        }
         res.status(400).json({ message: err.message });
     }
 });
 
 // --- DELETE a location ---
-router.delete('/:id', auth, async (req, res) => {
+// *** THIS FUNCTION IS REWRITTEN ***
+// DELETE /api/locations/12345
+router.delete('/:id', async (req, res) => {
     try {
-        // Find by ID AND ensure it belongs to the teacher before deleting
-        const deletedLocation = await Location.findOneAndDelete({ 
-            _id: req.params.id, 
-            teacherId: req.teacherId 
-        });
+        // Use findByIdAndDelete which finds and removes in one atomic operation
+        const deletedLocation = await Location.findByIdAndDelete(req.params.id);
 
         if (deletedLocation == null) {
-            return res.status(404).json({ message: 'Cannot find location or unauthorized' });
+            // If findByIdAndDelete returns null, it means no document with that ID was found
+            return res.status(404).json({ message: 'Cannot find location' });
         }
 
+        // Successfully deleted
         res.json({ message: 'Deleted Location' });
+
     } catch (err) {
-        console.error("Error deleting location:", err);
+        // Handle potential errors like invalid ID format or DB issues
+        console.error("Error deleting location:", err); // Log the actual error on the server
         res.status(500).json({ message: 'Error deleting location: ' + err.message });
     }
 });
+// *** END OF REWRITTEN FUNCTION ***
 
 module.exports = router;

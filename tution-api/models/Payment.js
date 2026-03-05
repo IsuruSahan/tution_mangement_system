@@ -2,45 +2,18 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const paymentSchema = new Schema({
-    // --- MULTI-TENANT FIELD ---
-    // Links this payment record to a specific teacher account
-    teacherId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Teacher',
-        required: true,
-        index: true
-    },
-    // --- Linked Student ---
-    student: { 
-        type: Schema.Types.ObjectId, 
-        ref: 'Student', 
-        required: true 
-    }, 
+    // This is how we link this payment to a specific student
+    student: { type: Schema.Types.ObjectId, ref: 'Student', required: true }, 
 
-    // --- Payment Details ---
-    month: { 
-        type: String, 
-        required: true 
-    }, // e.g., "October"
-    year: { 
-        type: Number, 
-        required: true 
-    }, // e.g., 2026
-    amount: { 
-        type: Number 
-    },
+    month: { type: String, required: true }, // e.g., "October"
+    year: { type: Number, required: true }, // e.g., 2025
+   amount: { type: Number },
     status: { 
         type: String, 
-        enum: ['Paid', 'Pending', 'Overdue'], 
+        enum: ['Paid', 'Pending', 'Overdue'], // Only allows these values
         default: 'Pending' 
     }
-}, { 
-    timestamps: true 
-});
-
-// This index ensures that for a specific teacher, a student 
-// can only have one payment record per month/year.
-paymentSchema.index({ teacherId: 1, student: 1, month: 1, year: 1 }, { unique: true });
+}, { timestamps: true });
 
 const Payment = mongoose.model('Payment', paymentSchema);
 module.exports = Payment;
