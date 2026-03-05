@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 
 const AuthContext = createContext();
@@ -8,42 +8,42 @@ export const AuthProvider = ({ children }) => {
     const [token, setToken] = useState(localStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
-    const apiUrl = process.env.REACT_APP_API_URL;
-
-    // We wrap fetchTeacher in useCallback so it doesn't change on every render
-    const fetchTeacher = useCallback(async () => {
-        if (!token || !apiUrl) {
+    // Whenever the token changes, update axios defaults and localStorage
+    useEffect(() => {
+        if (token) {
+            localStorage.setItem('token', token);
+            // This ensures EVERY axios request automatically includes the Bearer token
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            fetchTeacher();
+        } else {
+            localStorage.removeItem('token');
+            delete axios.defaults.headers.common['Authorization'];
+            setTeacher(null);
             setLoading(false);
-            return;
         }
+    }, [token]);
+
+    const fetchTeacher = async () => {
         try {
-            const res = await axios.get(`${apiUrl}/api/auth/me`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/auth/me`);
             setTeacher(res.data);
         } catch (err) {
-            console.error("Auth Error:", err);
-            localStorage.removeItem('token');
-            setToken(null);
+            console.error("Session expired or invalid");
+            logout();
         } finally {
             setLoading(false);
         }
-    }, [token, apiUrl]);
-
-    useEffect(() => {
-        fetchTeacher();
-    }, [fetchTeacher]); // Dependency is now stable
+    };
 
     const login = (newToken, teacherData) => {
-        localStorage.setItem('token', newToken);
         setToken(newToken);
         setTeacher(teacherData);
     };
 
     const logout = () => {
-        localStorage.removeItem('token');
         setToken(null);
         setTeacher(null);
+        localStorage.removeItem('token');
     };
 
     return (
