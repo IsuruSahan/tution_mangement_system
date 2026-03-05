@@ -1,71 +1,81 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors'); // Make sure cors is required
-require('dotenv').config(); // Load environment variables from .env file
+const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
-// Use port from environment variable (provided by Vercel) or default to 5000 locally
 const PORT = process.env.PORT || 5000;
 
-// --- CORS Configuration ---
+// --- Improved CORS Configuration ---
 const allowedOrigins = [
-    'http://localhost:3000',                              // For local testing
-    'https://tution-mangement-system-kjf5.vercel.app' // <<< YOUR DEPLOYED FRONTEND URL
+    'http://localhost:3000',
+    'https://tution-mangement-system.vercel.app'
 ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl) OR from allowed origins
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            console.error(`CORS blocked request from origin: ${origin}`); // Log blocked origins
-            callback(new Error('Not allowed by CORS'));
+        // 1. Allow requests with no origin (like mobile apps or Postman)
+        if (!origin) return callback(null, true);
+
+        // 2. Allow if origin is in our hardcoded list
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            return callback(null, true);
         }
+
+        // 3. Allow ANY Vercel preview/deployment URL from your project
+        // This fixes the "kjf5-2fpt6lafc..." error you saw in the logs
+        if (origin.includes('.vercel.app')) {
+            return callback(null, true);
+        }
+
+        // 4. Otherwise, block the request
+        console.error(`CORS blocked request from origin: ${origin}`);
+        return callback(new Error('Not allowed by CORS'));
     },
-    credentials: true // Optional: allows cookies/authorization headers if needed later
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
-// --- END CORS Configuration ---
 
 // --- Standard Middleware ---
-app.use(express.json()); // Allow the server to parse JSON request bodies
+app.use(express.json());
 
 // --- Database Connection ---
-const dbUri = process.env.MONGODB_URI; // Read connection string from environment variable
+const dbUri = process.env.MONGODB_URI;
+
 if (!dbUri) {
-    console.error('CRITICAL ERROR: MONGODB_URI environment variable is not defined.');
-    process.exit(1); // Stop the server if the database connection string is missing
+    console.error('CRITICAL ERROR: MONGODB_URI is not defined in environment variables.');
+    // Don't exit(1) on Vercel as it might prevent the logs from showing up correctly
+} else {
+    mongoose.connect(dbUri)
+        .then(() => console.log('✅ MongoDB connected successfully.'))
+        .catch(err => {
+            console.error('❌ MongoDB connection error:', err.message);
+        });
 }
 
-mongoose.connect(dbUri)
-    .then(() => console.log('MongoDB connected successfully.'))
-    .catch(err => {
-         console.error('MongoDB connection error:', err);
-         // Consider exiting if the initial connection fails: process.exit(1);
-     });
-
 // --- API Routes ---
-const studentRoutes = require('./routes/students');
-const paymentRoutes = require('./routes/payments');
-const attendanceRoutes = require('./routes/attendance');
-const dashboardRoutes = require('./routes/dashboard');
-const reportsRoutes = require('./routes/reports');
-const locationRoutes = require('./routes/locations');
+// Note: Ensure these files exist in your /routes folder
+app.use('/api/students', require('./routes/students'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/attendance', require('./routes/attendance'));
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/locations', require('./routes/locations'));
 
-// Mount the routes
-app.use('/api/students', studentRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/attendance', attendanceRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/reports', reportsRoutes);
-app.use('/api/locations', locationRoutes);
-
-// --- Simple Root Route (for health check) ---
+// --- Root Route / Health Check ---
 app.get('/', (req, res) => {
-    res.status(200).send('Tuition API is running!'); // Send a 200 OK status
+    res.status(200).json({ 
+        status: 'Online', 
+        message: 'Tuition API is running!',
+        dbConnected: mongoose.connection.readyState === 1
+    });
 });
 
 // --- Start the Server ---
+// For Vercel, app.listen is mostly for local dev; Vercel handles the execution context.
 app.listen(PORT, () => {
-    console.log(`Server is running on port: ${PORT}`);
+    console.log(`🚀 Server is running on port: ${PORT}`);
 });
+
+module.exports = app; // Required for Vercel functions to export the app
