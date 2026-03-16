@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'; // Added useEffect
 import axios from 'axios';
-import { Container, Row, Col, Form, Button, Card, Table, Spinner, Alert, Badge, InputGroup } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, Card, Table, Spinner, Alert, Badge } from 'react-bootstrap';
 
 // Helper array for month dropdown (unchanged)
 const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -204,33 +204,21 @@ function PaymentsPage() {
                     <tbody>
                         {studentList.map(item => (
                             <tr key={item.student._id}>
+                                {/* --- MODIFIED CELL --- */}
                                 <td>{item.student.name} ({item.student.studentId || 'No ID'})</td>
+                                {/* --- END MODIFICATION --- */}
                                 <td>{item.student.grade}</td>
                                 <td>{item.student.location}</td>
-                                <td style={{ minWidth: '200px' }}> {/* Amount Cell */}
+                                <td> {/* Amount Cell */}
                                     {item.status === 'Paid' ? (
-                                        `LKR ${item.amount != null ? item.amount.toLocaleString() : 'N/A'}`
+                                        `LKR ${item.amount != null ? item.amount.toLocaleString() : 'N/A'}` // Handle null amount
                                     ) : (
-                                        <InputGroup size="sm">
-                                            <Form.Control
-                                                type="number"
-                                                placeholder="Amt"
-                                                value={amounts[item.student._id] || ''}
-                                                onChange={(e) => handleAmountChange(item.student._id, e.target.value)}
-                                            />
-                                            <Button 
-                                                variant="outline-secondary" 
-                                                onClick={() => handleAmountChange(item.student._id, '1000')}
-                                            >
-                                                1000
-                                            </Button>
-                                            <Button 
-                                                variant="outline-secondary" 
-                                                onClick={() => handleAmountChange(item.student._id, '1500')}
-                                            >
-                                                1500
-                                            </Button>
-                                        </InputGroup>
+                                        <Form.Control
+                                            type="number"
+                                            placeholder="Enter amount"
+                                            value={amounts[item.student._id] || ''}
+                                            onChange={(e) => handleAmountChange(item.student._id, e.target.value)}
+                                        />
                                     )}
                                 </td>
                                 <td> {/* Status Badge */}
