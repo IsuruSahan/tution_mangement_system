@@ -6,10 +6,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// 🔥 TEMP DEBUG LOG (VERY IMPORTANT)
-console.log("🔍 MONGODB_URI:", process.env.MONGODB_URI);
+// --- TEMP: Log environment variable ---
+console.log("🔍 Checking MONGODB_URI...");
+console.log("MONGODB_URI:", process.env.MONGODB_URI ? "Exists" : "Undefined");
 
-// --- Improved CORS Configuration ---
+// --- CORS setup ---
 const allowedOrigins = [
     'http://localhost:3000',
     'https://tution-mangement-system.vercel.app'
@@ -18,45 +19,43 @@ const allowedOrigins = [
 app.use(cors({
     origin: function (origin, callback) {
         if (!origin) return callback(null, true);
-
-        if (allowedOrigins.indexOf(origin) !== -1) {
-            return callback(null, true);
-        }
-
-        if (origin.includes('.vercel.app')) {
-            return callback(null, true);
-        }
-
+        if (allowedOrigins.includes(origin) || origin.includes('.vercel.app')) return callback(null, true);
         console.error(`CORS blocked request from origin: ${origin}`);
         return callback(new Error('Not allowed by CORS'));
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET','POST','PUT','DELETE','OPTIONS'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type','Authorization']
 }));
 
-// --- Standard Middleware ---
 app.use(express.json());
 
-// --- Database Connection ---
+// --- Vercel-safe MongoDB connection ---
 const dbUri = process.env.MONGODB_URI;
 
-if (!dbUri) {
-    console.error('❌ CRITICAL ERROR: MONGODB_URI is not defined.');
-} else {
-    console.log("✅ Attempting DB connection...");
+async function connectDB() {
+    if (!dbUri) {
+        console.error('❌ MONGODB_URI is undefined! Please set it in Vercel environment variables.');
+        return;
+    }
 
-    mongoose.connect(dbUri, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-    })
-    .then(() => console.log('✅ MongoDB connected successfully.'))
-    .catch(err => {
-        console.error('❌ MongoDB connection FULL error:', err);
-    });
+    try {
+        console.log("⏳ Attempting MongoDB connection...");
+        await mongoose.connect(dbUri, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+        console.log('✅ MongoDB connected successfully!');
+    } catch (err) {
+        console.error('❌ MongoDB connection FAILED!');
+        console.error('Full error:', err);
+    }
 }
 
-// --- API Routes ---
+// Call connection
+connectDB();
+
+// --- API routes ---
 app.use('/api/students', require('./routes/students'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/attendance', require('./routes/attendance'));
@@ -64,18 +63,16 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/locations', require('./routes/locations'));
 
-// --- Root Route / Health Check ---
+// --- Health check ---
 app.get('/', (req, res) => {
-    res.status(200).json({ 
-        status: 'Online', 
+    res.json({
+        status: 'Online',
         message: 'Tuition API is running!',
         dbConnected: mongoose.connection.readyState === 1
     });
 });
 
-// --- Start the Server ---
-app.listen(PORT, () => {
-    console.log(`🚀 Server is running on port: ${PORT}`);
-});
+// --- Server listen (for local dev) ---
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
 module.exports = app;
