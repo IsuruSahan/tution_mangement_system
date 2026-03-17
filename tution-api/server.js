@@ -6,6 +6,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// 🔥 TEMP DEBUG LOG (VERY IMPORTANT)
+console.log("🔍 MONGODB_URI:", process.env.MONGODB_URI);
+
 // --- Improved CORS Configuration ---
 const allowedOrigins = [
     'http://localhost:3000',
@@ -14,21 +17,16 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: function (origin, callback) {
-        // 1. Allow requests with no origin (like mobile apps or Postman)
         if (!origin) return callback(null, true);
 
-        // 2. Allow if origin is in our hardcoded list
         if (allowedOrigins.indexOf(origin) !== -1) {
             return callback(null, true);
         }
 
-        // 3. Allow ANY Vercel preview/deployment URL from your project
-        // This fixes the "kjf5-2fpt6lafc..." error you saw in the logs
         if (origin.includes('.vercel.app')) {
             return callback(null, true);
         }
 
-        // 4. Otherwise, block the request
         console.error(`CORS blocked request from origin: ${origin}`);
         return callback(new Error('Not allowed by CORS'));
     },
@@ -44,18 +42,21 @@ app.use(express.json());
 const dbUri = process.env.MONGODB_URI;
 
 if (!dbUri) {
-    console.error('CRITICAL ERROR: MONGODB_URI is not defined in environment variables.');
-    // Don't exit(1) on Vercel as it might prevent the logs from showing up correctly
+    console.error('❌ CRITICAL ERROR: MONGODB_URI is not defined.');
 } else {
-    mongoose.connect(dbUri)
-        .then(() => console.log('✅ MongoDB connected successfully.'))
-        .catch(err => {
-            console.error('❌ MongoDB connection error:', err.message);
-        });
+    console.log("✅ Attempting DB connection...");
+
+    mongoose.connect(dbUri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+    })
+    .then(() => console.log('✅ MongoDB connected successfully.'))
+    .catch(err => {
+        console.error('❌ MongoDB connection FULL error:', err);
+    });
 }
 
 // --- API Routes ---
-// Note: Ensure these files exist in your /routes folder
 app.use('/api/students', require('./routes/students'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/attendance', require('./routes/attendance'));
@@ -73,9 +74,8 @@ app.get('/', (req, res) => {
 });
 
 // --- Start the Server ---
-// For Vercel, app.listen is mostly for local dev; Vercel handles the execution context.
 app.listen(PORT, () => {
     console.log(`🚀 Server is running on port: ${PORT}`);
 });
 
-module.exports = app; // Required for Vercel functions to export the app
+module.exports = app;
