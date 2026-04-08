@@ -7,7 +7,7 @@ router.get('/finance', async (req, res) => {
     try {
         const { month, year, grade, location } = req.query;
 
-        // --- 1. Basic Income Aggregation (Breakdown & Grand Total) ---
+        // --- 1. Filter Setup ---
         const paymentMatchFilter = { status: 'Paid' };
         if (month && month !== 'All') paymentMatchFilter.month = month;
         if (year && year !== 'All') paymentMatchFilter.year = Number(year);
@@ -16,8 +16,10 @@ router.get('/finance', async (req, res) => {
         if (grade && grade !== 'All') studentMatchFilter['studentDetails.grade'] = grade;
         if (location && location !== 'All') studentMatchFilter['studentDetails.location'] = location;
 
+        // --- 2. Advanced Aggregation with Triple Join ---
         const reportData = await Payment.aggregate([
             { $match: paymentMatchFilter },
+            // Join 1: Get Student Details
             {
                 $lookup: {
                     from: 'students', 
@@ -28,6 +30,33 @@ router.get('/finance', async (req, res) => {
             },
             { $unwind: '$studentDetails' },
             { $match: studentMatchFilter },
+            // Join 2: Get Location Charge Percentage
+            {
+                $lookup: {
+                    from: 'locations',
+                    localField: 'studentDetails.location',
+                    foreignField: 'name',
+                    as: 'locInfo'
+                }
+            },
+            { $unwind: { path: '$locInfo', preserveNullAndEmptyArrays: true } },
+            // Step 3: Calculate Fees and Net for each record
+            {
+                $addFields: {
+                    hallFee: {
+                        $multiply: [
+                            "$amount",
+                            { $divide: [{ $ifNull: ["$locInfo.chargePercentage", 0] }, 100] }
+                        ]
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    netAmount: { $subtract: ["$amount", "$hallFee"] }
+                }
+            },
+            // Step 4: Group into Final Totals
             {
                 $facet: {
                     "breakdown": [
@@ -39,17 +68,21 @@ router.get('/finance', async (req, res) => {
                                     grade: '$studentDetails.grade',
                                     location: '$studentDetails.location'
                                 },
-                                totalIncome: { $sum: '$amount' },
+                                grossIncome: { $sum: '$amount' },
+                                totalFees: { $sum: '$hallFee' },
+                                netIncome: { $sum: '$netAmount' },
                                 studentsPaid: { $sum: 1 }
                             }
                         },
-                        { $sort: { '_id.year': -1, '_id.month': 1 } }
+                        { $sort: { '_id.year': -1, '_id.month': 1, '_id.grade': 1 } }
                     ],
                     "grandTotal": [
                         {
                             $group: {
                                 _id: null,
-                                totalIncome: { $sum: '$amount' },
+                                totalGross: { $sum: '$amount' },
+                                totalFees: { $sum: '$hallFee' },
+                                totalNet: { $sum: '$netAmount' },
                                 totalStudentsPaid: { $sum: 1 }
                             }
                         }
@@ -61,42 +94,33 @@ router.get('/finance', async (req, res) => {
             }
         ]);
 
-        // --- 2. NEW FEATURE: Robust Unpaid Calculation ---
+        // --- 3. Unpaid Logic (Preserved) ---
         let unpaidStudents = [];
         let unpaidCount = 0;
-
         if (month !== 'All' && year !== 'All') {
-            // A. Get list of IDs who HAVE paid for this specific month/year
             const paidIds = (reportData[0]?.paidStudentIds || []).map(item => item._id);
-
-            // B. Build the filter for all students who SHOULD pay
             const activeClassFilter = { isActive: true };
             if (grade && grade !== 'All') activeClassFilter.grade = grade;
             if (location && location !== 'All') activeClassFilter.location = location;
 
-            // --- DEBUG LOGS: Check your terminal! ---
-            console.log(`🔍 Checking Unpaid for: ${month} ${year} | Class: ${grade} | Loc: ${location}`);
-            
-            // C. Find students in this class NOT in the paidIds list
             unpaidStudents = await Student.find({
                 ...activeClassFilter,
                 _id: { $nin: paidIds }
-            }).select('name studentId grade location contactPhone'); // Corrected to contactPhone
+            }).select('name studentId grade location contactPhone');
             
             unpaidCount = unpaidStudents.length;
-            console.log(`👨‍🎓 Found ${unpaidCount} unpaid students.`);
         }
 
         res.json({
             breakdown: reportData[0]?.breakdown || [], 
-            grandTotal: reportData[0]?.grandTotal[0] || { totalIncome: 0, totalStudentsPaid: 0 },
+            grandTotal: reportData[0]?.grandTotal[0] || { totalGross: 0, totalFees: 0, totalNet: 0, totalStudentsPaid: 0 },
             unpaidStudents,
             unpaidCount
         });
 
     } catch (err) {
-        console.error("Finance Error:", err);
-        res.status(500).json({ message: "Error: " + err.message });
+        console.error("Finance Report Error:", err);
+        res.status(500).json({ message: "Error generating report: " + err.message });
     }
 });
 
