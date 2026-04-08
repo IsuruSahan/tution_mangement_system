@@ -230,7 +230,7 @@ function PaymentsPage() {
                                             >
                                                 1500
                                             </Button>
-                                                                                        <Button 
+                                            <Button 
                                                 variant="outline-secondary" 
                                                 onClick={() => handleAmountChange(item.student._id, '2000')}
                                             >

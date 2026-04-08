@@ -193,7 +193,7 @@ function DashboardPage() {
                 </Col>
             </Row>
 
-            {/* --- ROW 3: CHARTS --- */}
+            {/* --- ROW 3: CHART --- */}
             <Row>
                 <Col md={8} className="mb-3">
                     <Card className="shadow-sm border-0 h-100">
