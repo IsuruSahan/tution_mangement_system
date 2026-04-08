@@ -1,59 +1,35 @@
 const router = require('express').Router();
 const Payment = require('../models/Payment');
-const Student = require('../models/Student'); // We need this to $lookup
+const Student = require('../models/Student'); 
 const mongoose = require('mongoose');
 
-// GET /api/reports/finance
-// Accepts query params: ?month=...&year=...&grade=...&location=...
 router.get('/finance', async (req, res) => {
     try {
         const { month, year, grade, location } = req.query;
 
-        // --- 1. Build Match Filters ---
-
-        // Filter for the Payment collection
+        // --- 1. Basic Income Aggregation (Breakdown & Grand Total) ---
         const paymentMatchFilter = { status: 'Paid' };
-        if (month && month !== 'All') {
-            paymentMatchFilter.month = month;
-        }
-        if (year && year !== 'All') {
-            paymentMatchFilter.year = Number(year);
-        }
+        if (month && month !== 'All') paymentMatchFilter.month = month;
+        if (year && year !== 'All') paymentMatchFilter.year = Number(year);
 
-        // Filter for the Student collection (after $lookup)
         const studentMatchFilter = {};
-        if (grade && grade !== 'All') {
-            studentMatchFilter['studentDetails.grade'] = grade;
-        }
-        if (location && location !== 'All') {
-            studentMatchFilter['studentDetails.location'] = location;
-        }
+        if (grade && grade !== 'All') studentMatchFilter['studentDetails.grade'] = grade;
+        if (location && location !== 'All') studentMatchFilter['studentDetails.location'] = location;
 
-        // --- 2. Run the Aggregation Pipeline ---
         const reportData = await Payment.aggregate([
-            // Stage 1: Filter payments by status, month, and year
             { $match: paymentMatchFilter },
-            
-            // Stage 2: Join with the students collection
             {
                 $lookup: {
-                    from: 'students', // The name of the students collection in MongoDB
+                    from: 'students', 
                     localField: 'student',
                     foreignField: '_id',
                     as: 'studentDetails'
                 }
             },
-            
-            // Stage 3: $unwind to deconstruct the studentDetails array
             { $unwind: '$studentDetails' },
-            
-            // Stage 4: Filter by student grade and location
             { $match: studentMatchFilter },
-
-            // Stage 5: Run $facet to get grand total AND breakdown in one query
             {
                 $facet: {
-                    // Branch A: Get the detailed breakdown
                     "breakdown": [
                         {
                             $group: {
@@ -67,16 +43,8 @@ router.get('/finance', async (req, res) => {
                                 studentsPaid: { $sum: 1 }
                             }
                         },
-                        {
-                            $sort: { 
-                                '_id.year': -1, 
-                                '_id.month': 1, 
-                                '_id.grade': 1, 
-                                '_id.location': 1 
-                            }
-                        }
+                        { $sort: { '_id.year': -1, '_id.month': 1 } }
                     ],
-                    // Branch B: Get the grand total
                     "grandTotal": [
                         {
                             $group: {
@@ -85,21 +53,50 @@ router.get('/finance', async (req, res) => {
                                 totalStudentsPaid: { $sum: 1 }
                             }
                         }
+                    ],
+                    "paidStudentIds": [
+                        { $group: { _id: '$student' } }
                     ]
                 }
             }
         ]);
 
-        // --- 3. Format and Send the Response ---
+        // --- 2. NEW FEATURE: Robust Unpaid Calculation ---
+        let unpaidStudents = [];
+        let unpaidCount = 0;
+
+        if (month !== 'All' && year !== 'All') {
+            // A. Get list of IDs who HAVE paid for this specific month/year
+            const paidIds = (reportData[0]?.paidStudentIds || []).map(item => item._id);
+
+            // B. Build the filter for all students who SHOULD pay
+            const activeClassFilter = { isActive: true };
+            if (grade && grade !== 'All') activeClassFilter.grade = grade;
+            if (location && location !== 'All') activeClassFilter.location = location;
+
+            // --- DEBUG LOGS: Check your terminal! ---
+            console.log(`🔍 Checking Unpaid for: ${month} ${year} | Class: ${grade} | Loc: ${location}`);
+            
+            // C. Find students in this class NOT in the paidIds list
+            unpaidStudents = await Student.find({
+                ...activeClassFilter,
+                _id: { $nin: paidIds }
+            }).select('name studentId grade location contactPhone'); // Corrected to contactPhone
+            
+            unpaidCount = unpaidStudents.length;
+            console.log(`👨‍🎓 Found ${unpaidCount} unpaid students.`);
+        }
+
         res.json({
-            // Use [0] because $facet returns an array
-            breakdown: reportData[0].breakdown, 
-            // Use [0] because $group returns an array
-            grandTotal: reportData[0].grandTotal[0] || { totalIncome: 0, totalStudentsPaid: 0 } 
+            breakdown: reportData[0]?.breakdown || [], 
+            grandTotal: reportData[0]?.grandTotal[0] || { totalIncome: 0, totalStudentsPaid: 0 },
+            unpaidStudents,
+            unpaidCount
         });
 
     } catch (err) {
-        res.status(500).json({ message: "Error fetching finance report: " + err.message });
+        console.error("Finance Error:", err);
+        res.status(500).json({ message: "Error: " + err.message });
     }
 });
 
