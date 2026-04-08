@@ -1,8 +1,7 @@
 const router = require('express').Router();
 const Location = require('../models/Location');
 
-// --- GET ALL locations ---
-// (No change to this function)
+// --- 1. GET ALL locations ---
 router.get('/', async (req, res) => {
     try {
         const locations = await Location.find().sort({ name: 1 });
@@ -12,11 +11,11 @@ router.get('/', async (req, res) => {
     }
 });
 
-// --- CREATE a new location ---
-// (No change to this function)
+// --- 2. CREATE a new location (Updated to include chargePercentage) ---
 router.post('/', async (req, res) => {
     const location = new Location({
-        name: req.body.name
+        name: req.body.name,
+        chargePercentage: req.body.chargePercentage || 0 // Default to 0 if not provided
     });
     try {
         const newLocation = await location.save();
@@ -26,28 +25,43 @@ router.post('/', async (req, res) => {
     }
 });
 
-// --- DELETE a location ---
-// *** THIS FUNCTION IS REWRITTEN ***
-// DELETE /api/locations/12345
-router.delete('/:id', async (req, res) => {
+// --- 3. UPDATE a location (NEW: For your "One-by-One" updates) ---
+// PUT /api/locations/12345
+router.put('/:id', async (req, res) => {
     try {
-        // Use findByIdAndDelete which finds and removes in one atomic operation
-        const deletedLocation = await Location.findByIdAndDelete(req.params.id);
+        const { name, chargePercentage } = req.body;
+        
+        const updatedLocation = await Location.findByIdAndUpdate(
+            req.params.id,
+            { 
+                name, 
+                chargePercentage: Number(chargePercentage) // Ensure it's a number
+            },
+            { new: true, runValidators: true } // returns the updated document
+        );
 
-        if (deletedLocation == null) {
-            // If findByIdAndDelete returns null, it means no document with that ID was found
+        if (!updatedLocation) {
             return res.status(404).json({ message: 'Cannot find location' });
         }
 
-        // Successfully deleted
-        res.json({ message: 'Deleted Location' });
-
+        res.json(updatedLocation);
     } catch (err) {
-        // Handle potential errors like invalid ID format or DB issues
-        console.error("Error deleting location:", err); // Log the actual error on the server
+        res.status(400).json({ message: 'Error updating location: ' + err.message });
+    }
+});
+
+// --- 4. DELETE a location ---
+router.delete('/:id', async (req, res) => {
+    try {
+        const deletedLocation = await Location.findByIdAndDelete(req.params.id);
+        if (deletedLocation == null) {
+            return res.status(404).json({ message: 'Cannot find location' });
+        }
+        res.json({ message: 'Deleted Location' });
+    } catch (err) {
+        console.error("Error deleting location:", err);
         res.status(500).json({ message: 'Error deleting location: ' + err.message });
     }
 });
-// *** END OF REWRITTEN FUNCTION ***
 
 module.exports = router;

@@ -53,7 +53,6 @@ router.get('/', async (req, res) => {
         const presentToday = presentStats[0].totalPresent[0] ? presentStats[0].totalPresent[0].count : 0;
         const presentTodayByGrade = presentStats[0].presentByGrade;
 
-
         // --- 4. Get Grade-Wise Student Totals ---
         const totalStudentsByGrade = await Student.aggregate([
             { $match: { isActive: true } },
@@ -61,8 +60,7 @@ router.get('/', async (req, res) => {
             { $sort: { _id: 1 } }
         ]);
 
-
-        // --- 5. Aggregate Payment Stats ---
+        // --- 5. Aggregate Payment Status Stats ---
         const allStudentStats = await Student.aggregate([
             { $match: { isActive: true } },
             {
@@ -111,35 +109,73 @@ router.get('/', async (req, res) => {
         const paymentStatusThisMonth = stats.paymentStatusThisMonth;
         const pendingPaymentsByGrade = stats.pendingPaymentsByGrade;
 
-        // --- NEW: 6. Get Income Stats ---
+        // --- 6. REWRITTEN: Detailed Income Stats with Hall Fee Calculations ---
         const incomeStats = await Payment.aggregate([
             {
                 $match: {
                     status: 'Paid',
-                    year: currentYear // Filter for the current year
+                    year: currentYear
+                }
+            },
+            // Step A: Link Payment to Student
+            {
+                $lookup: {
+                    from: 'students',
+                    localField: 'student',
+                    foreignField: '_id',
+                    as: 'studentDoc'
+                }
+            },
+            { $unwind: '$studentDoc' },
+            // Step B: Link Student's Location String to the Locations Collection
+            {
+                $lookup: {
+                    from: 'locations',
+                    localField: 'studentDoc.location',
+                    foreignField: 'name',
+                    as: 'locationDoc'
+                }
+            },
+            // Step C: Preserve record even if location isn't found (though it should be)
+            { $unwind: { path: '$locationDoc', preserveNullAndEmptyArrays: true } },
+            // Step D: Calculate math fields
+            {
+                $addFields: {
+                    feePercent: { $ifNull: ["$locationDoc.chargePercentage", 0] },
+                    hallFee: {
+                        $multiply: [
+                            "$amount",
+                            { $divide: [{ $ifNull: ["$locationDoc.chargePercentage", 0] }, 100] }
+                        ]
+                    }
                 }
             },
             {
+                $addFields: {
+                    netAmount: { $subtract: ["$amount", "$hallFee"] }
+                }
+            },
+            // Step E: Group into Year and Month totals
+            {
                 $facet: {
-                    // Branch 1: Total for the year
-                    "yearTotal": [
+                    "yearTotals": [
                         {
                             $group: {
                                 _id: null,
-                                total: { $sum: "$amount" }
+                                totalGross: { $sum: "$amount" },
+                                totalFees: { $sum: "$hallFee" },
+                                totalNet: { $sum: "$netAmount" }
                             }
                         }
                     ],
-                    // Branch 2: Total for the month
-                    "monthTotal": [
-                        // Filter again for the current month
-                        { 
-                            $match: { month: currentMonth }
-                        },
+                    "monthTotals": [
+                        { $match: { month: currentMonth } },
                         {
                             $group: {
                                 _id: null,
-                                total: { $sum: "$amount" }
+                                totalGross: { $sum: "$amount" },
+                                totalFees: { $sum: "$hallFee" },
+                                totalNet: { $sum: "$netAmount" }
                             }
                         }
                     ]
@@ -147,28 +183,35 @@ router.get('/', async (req, res) => {
             }
         ]);
 
-        const totalIncomeThisYear = incomeStats[0].yearTotal[0] ? incomeStats[0].yearTotal[0].total : 0;
-        const totalIncomeThisMonth = incomeStats[0].monthTotal[0] ? incomeStats[0].monthTotal[0].total : 0;
-
+        // Format Income results
+        const mIncome = incomeStats[0].monthTotals[0] || { totalGross: 0, totalFees: 0, totalNet: 0 };
+        const yIncome = incomeStats[0].yearTotals[0] || { totalGross: 0, totalFees: 0, totalNet: 0 };
 
         // --- 7. Send all data back ---
         res.json({
-            // Simple totals
             totalStudents,
             presentToday,
-            totalIncomeThisMonth, // <-- NEW
-            totalIncomeThisYear,  // <-- NEW
             
-            // Grade-wise arrays
+            // Structured Income Data for Frontend
+            incomeThisMonth: {
+                gross: mIncome.totalGross,
+                fees: mIncome.totalFees,
+                net: mIncome.totalNet
+            },
+            incomeThisYear: {
+                gross: yIncome.totalGross,
+                fees: yIncome.totalFees,
+                net: yIncome.totalNet
+            },
+            
             totalStudentsByGrade,
             presentTodayByGrade,
             pendingPaymentsByGrade,
-            
-            // Chart data
             paymentStatusThisMonth
         });
 
     } catch (err) {
+        console.error("Dashboard Error:", err);
         res.status(500).json({ message: "Error fetching dashboard data: " + err.message });
     }
 });
